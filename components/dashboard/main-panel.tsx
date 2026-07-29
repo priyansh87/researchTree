@@ -1,8 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
-import { Share2, Download, Zap, Brain, Send, Paperclip, ToggleRight } from 'lucide-react'
+import { Share2, Download, Zap, Brain, Send, Paperclip, ToggleRight, Loader2 } from 'lucide-react'
 import MarkdownRenderer from '@/components/markdown-renderer'
 import ChartRenderer from '@/components/chart-renderer'
 
@@ -146,17 +146,113 @@ Here's a detailed comparison of the three laptops across key metrics:
   },
 }
 
+
 export default function MainPanel({ researchId }: MainPanelProps) {
   const [input, setInput] = useState('')
   const [isResearching, setIsResearching] = useState(false)
-  const research = researchData[researchId] || researchData['gaming-laptop']
+  const [responses, setResponses] = useState<any[]>([])
+  const [meta, setMeta] = useState<any>({
+    title: 'Loading Research...',
+    memory: 'Loading memory...',
+    lastUpdated: 'Just now',
+  })
+  const [loading, setLoading] = useState(true)
 
-  const handleSend = () => {
-    if (input.trim()) {
-      setIsResearching(true)
-      setTimeout(() => setIsResearching(false), 2000)
-      setInput('')
+  useEffect(() => {
+    if (!researchId) return
+
+    async function loadResearchData() {
+      setLoading(true)
+      try {
+        const metaRes = await fetch(`/api/research/${researchId}`)
+        const metaData = await metaRes.json()
+
+        const respRes = await fetch(`/api/research/${researchId}/responses`)
+        const respData = await respRes.json()
+
+        if (metaRes.ok && respRes.ok) {
+          setMeta({
+            ...metaData.research,
+            lastUpdated: 'Just now',
+          })
+          setResponses(respData.responses || [])
+        }
+      } catch (err) {
+        console.error('Error fetching research details:', err)
+      } finally {
+        setLoading(false)
+      }
     }
+
+    loadResearchData()
+  }, [researchId])
+
+  const handleSend = async () => {
+    if (!input.trim() || !researchId) return
+    const userPrompt = input.trim()
+    setInput('')
+    setIsResearching(true)
+
+    try {
+      // 1. Save user question turn
+      const userRes = await fetch(`/api/research/${researchId}/responses`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'user',
+          content: userPrompt,
+        }),
+      })
+      const userData = await userRes.json()
+      if (userRes.ok && userData.response) {
+        setResponses((prev) => [...prev, userData.response])
+      }
+
+      // Simulate research thinking time
+      await new Promise((resolve) => setTimeout(resolve, 2000))
+
+      // 2. Generate and save mock agent answer turn
+      const mockReply = `### Synthetic Synthesis on: ${userPrompt}\n\nHere are the mock synthesized details matching your query. We have retrieved standard facts from public nodes:\n\n*   **Performance Delta**: Solid performance benchmarked across nodes.\n*   **Efficiency**: Standard thermal and memory metrics verified.\n*   **Constraint Check**: Validated parameters.\n\n*Later, we will design the custom AI agent to crawl the web, parse PDFs, and build this response.*`
+
+      const agentRes = await fetch(`/api/research/${researchId}/responses`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'assistant',
+          content: mockReply,
+          summary: `Analysis summary on "${userPrompt.slice(0, 30)}..."`,
+          sourcesCount: 3,
+          citationsCount: 4,
+          confidence: '95%',
+          expanded: true,
+          charts: [],
+        }),
+      })
+      const agentData = await agentRes.json()
+      if (agentRes.ok && agentData.response) {
+        setResponses((prev) => [...prev, agentData.response])
+      }
+    } catch (err) {
+      console.error('Error during send transaction:', err)
+    } finally {
+      setIsResearching(false)
+    }
+  }
+
+  const toggleExpand = async (id: string, currentlyExpanded: boolean) => {
+    // Optimistic local toggle
+    setResponses((prev) =>
+      prev.map((r) => (r.id === id ? { ...r, expanded: !currentlyExpanded } : r))
+    )
+  }
+
+  if (loading) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center bg-zinc-900 border-r border-zinc-800/50">
+        <Loader2 className="w-10 h-10 text-emerald-500 animate-spin" />
+        <p className="text-zinc-400 text-sm mt-3">Syncing research history...</p>
+      </div>
+    )
   }
 
   return (
@@ -165,8 +261,8 @@ export default function MainPanel({ researchId }: MainPanelProps) {
       <div className="px-8 py-6 border-b border-zinc-800/50">
         <div className="flex items-start justify-between mb-4">
           <div>
-            <h1 className="text-2xl font-bold text-white mb-1">{research.title}</h1>
-            <p className="text-sm text-zinc-400">Last updated {research.lastUpdated}</p>
+            <h1 className="text-2xl font-bold text-white mb-1">{meta.title}</h1>
+            <p className="text-sm text-zinc-400">Last updated {meta.lastUpdated}</p>
           </div>
           <div className="flex gap-2">
             <Button
@@ -190,14 +286,14 @@ export default function MainPanel({ researchId }: MainPanelProps) {
         <div className="flex items-center gap-4 text-sm">
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/20">
             <Brain className="w-4 h-4 text-emerald-400" />
-            <span className="text-emerald-300">Memory: {research.memory}</span>
+            <span className="text-emerald-300">Memory: {meta.memory || 'No aggregated memory yet.'}</span>
           </div>
         </div>
       </div>
 
       {/* Responses */}
       <div className="flex-1 overflow-y-auto px-8 py-6 space-y-6">
-        {research.responses.map((response: any) => (
+        {responses.map((response: any) => (
           <div key={response.id} className="space-y-3">
             {response.type === 'assistant' ? (
               <div className="bg-zinc-800 rounded-2xl p-6 border border-zinc-700/50">
@@ -205,7 +301,9 @@ export default function MainPanel({ researchId }: MainPanelProps) {
                 <div className="mb-4">
                   {response.expanded ? (
                     <div className="space-y-4">
-                      <h2 className="text-lg font-semibold text-white">{response.summary}</h2>
+                      {response.summary && (
+                        <h2 className="text-lg font-semibold text-white">{response.summary}</h2>
+                      )}
                       <MarkdownRenderer content={response.content} />
                       {/* Render Charts if present */}
                       {response.charts &&
@@ -216,21 +314,28 @@ export default function MainPanel({ researchId }: MainPanelProps) {
                         ))}
                     </div>
                   ) : (
-                    <MarkdownRenderer content={response.content} />
+                    <div className="space-y-2">
+                      <h2 className="text-base font-semibold text-zinc-200">{response.summary || 'Summary'}</h2>
+                      <p className="text-sm text-zinc-400">Expand research details below.</p>
+                    </div>
                   )}
                 </div>
 
                 {/* Metadata */}
                 <div className="flex items-center justify-between pt-4 border-t border-zinc-700/50">
                   <div className="flex items-center gap-4 text-xs">
-                    <span className="text-zinc-400 font-medium">{response.sources} sources</span>
-                    <span className="text-zinc-400 font-medium">{response.citations} citations</span>
+                    <span className="text-zinc-400 font-medium">{response.sourcesCount} sources</span>
+                    <span className="text-zinc-400 font-medium">{response.citationsCount} citations</span>
                     <span className="px-2 py-1 rounded-full bg-emerald-500/20 text-emerald-400 font-medium">
                       {response.confidence} confident
                     </span>
                   </div>
-                  <Button variant="ghost" className="text-xs text-zinc-400 hover:bg-zinc-700">
-                    Expand
+                  <Button
+                    variant="ghost"
+                    onClick={() => toggleExpand(response.id, response.expanded)}
+                    className="text-xs text-zinc-400 hover:bg-zinc-700"
+                  >
+                    {response.expanded ? 'Collapse' : 'Expand'}
                   </Button>
                 </div>
               </div>
@@ -279,7 +384,7 @@ export default function MainPanel({ researchId }: MainPanelProps) {
               }
             }}
             placeholder="What would you like to research?"
-            className="w-full p-4 pr-24 border border-zinc-700 rounded-2xl resize-none text-sm text-white placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 bg-zinc-800"
+            className="w-full p-4 pr-24 border border-zinc-700 rounded-2xl resize-none text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 bg-zinc-800"
             rows={3}
           />
 
@@ -322,3 +427,4 @@ export default function MainPanel({ researchId }: MainPanelProps) {
     </div>
   )
 }
+
