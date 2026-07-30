@@ -1,5 +1,5 @@
 import { db } from '@/lib/db';
-import { memoryItems } from '@/lib/db/schema';
+import { memoryItems, researchItems } from '@/lib/db/schema';
 import { eq, inArray } from 'drizzle-orm';
 import { Annotation, StateGraph, END, START } from "@langchain/langgraph";
 
@@ -213,15 +213,22 @@ You MUST respond with a JSON object:
   }
 
   // Normal orchestrator check
+  const memoryContext = state.memories && state.memories.length > 0 
+    ? state.memories.map((m: any) => `- ${typeof m === 'string' ? m : (m.content || JSON.stringify(m))}`).join('\n')
+    : 'No user memories or past selections recorded yet.';
+
   const systemPrompt = `You are the Orchestrator for an AI-powered Research Platform.
 Your task is to analyze the user's input and determine their intent:
-1. "conversational": Simple greetings (e.g. "hi", "hello", "hey", "how are you"), check-ins, general chat, or questions about what you can do.
-2. "research": An actual request to find, compare, analyze, or research a topic (e.g. "find me a laptop", "explain quantum computing", "compare iPhone and Samsung", "buying a shop").
+1. "conversational": Simple greetings (e.g. "hi", "hello", "hey"), check-ins, general chat, OR questions querying/asking about user preferences, choices, or past research selections that can be answered from their memory.
+2. "research": An actual request to find, compare, analyze, or research a new topic (e.g. "find me a laptop", "explain quantum computing", "compare iPhone and Samsung").
+
+USER MEMORY FACTS:
+${memoryContext}
 
 For "conversational" intent:
 - Set "intent" to "conversational".
 - Set "clarificationNeeded" to false.
-- Set "conversationalReply" to a friendly, context-appropriate reply welcoming the user, acknowledging their message, and prompting them for a research topic (keep it under 3 sentences).
+- Set "conversationalReply" to a friendly response. If they asked about their past research, choices, or preferences, directly answer using the USER MEMORY FACTS provided above (keep the response under 3 sentences).
 - Set "topic" to "general".
 - Set "searchQuery" to null.
 - Set "questions" to an empty array.
@@ -267,8 +274,16 @@ You MUST respond with a JSON object matching this schema:
       topic: parsed.topic || 'general-research',
       searchQuery: parsed.searchQuery || null,
     };
-  } catch (err) {
+  } catch (err: any) {
     console.error('Failed in orchestratorNode:', err);
+    if (err?.message?.includes('429') || err?.message?.includes('rate limit')) {
+      return {
+        intent: 'conversational',
+        clarificationNeeded: false,
+        conversationalReply: "I'm sorry, but I've hit the Groq API daily rate limits. Please check your token usage on the Groq Console or try again later.",
+        topic: 'general',
+      };
+    }
     return {
       intent: 'research',
       clarificationNeeded: false,
@@ -403,11 +418,16 @@ Example format:
         topicMetadata: metadata.topicMetadata || null,
       },
     };
-  } catch (err) {
+  } catch (err: any) {
     console.error('Failed in synthesizerNode:', err);
+    const isRateLimit = err?.message?.includes('429') || err?.message?.includes('rate limit');
+    const errorMsg = isRateLimit 
+      ? "I encountered a Groq API Rate Limit (429) while compiling the research. Please check your daily token allowance or try again later."
+      : `Hello! I encountered an error compiling the research on: ${state.prompt}. Please try again.`;
+
     return {
       report: {
-        markdown: `Hello! I encountered an error compiling the research on: ${state.prompt}. Please try again.`,
+        markdown: errorMsg,
         sources: [],
         relatedResearch: [],
         facts: [`User researched ${state.topic}`],
@@ -463,8 +483,8 @@ export async function runResearchAgentWorkflow(
 }
 
 // Backwards compatibility functions to avoid breaking imports
-export async function analyzeQuery(prompt: string, history: any[] = []) {
-  const result = await runResearchAgentWorkflow(prompt, {}, history);
+export async function analyzeQuery(prompt: string, history: any[] = [], memories: any[] = []) {
+  const result = await runResearchAgentWorkflow(prompt, {}, history, memories);
   return {
     intent: result.intent,
     conversationalReply: result.conversationalReply,
@@ -544,17 +564,38 @@ export async function addMem0Memory(
 export async function searchMem0Memories(
   userId: string,
   workspaceId: string,
-  researchId: string,
+  researchId?: string | null,
   topic?: string
 ) {
   const apiKey = process.env.MEM0_API_KEY;
 
   if (!apiKey) {
-    const localMemories = await db
-      .select()
-      .from(memoryItems)
-      .where(eq(memoryItems.researchId, researchId));
-    return localMemories.map((m) => m.content);
+    let query = db.select().from(memoryItems);
+    if (researchId) {
+      query = query.where(eq(memoryItems.researchId, researchId)) as any;
+    } else {
+      // workspace-wide local memory retrieval
+      const workspaceResearch = await db
+        .select({ id: researchItems.id })
+        .from(researchItems)
+        .where(eq(researchItems.workspaceId, workspaceId));
+      if (workspaceResearch.length === 0) return [];
+      const ids = workspaceResearch.map((r) => r.id);
+      query = query.where(inArray(memoryItems.researchId, ids)) as any;
+    }
+    const localMemories = await query;
+    const contents = localMemories.map((m) => m.content);
+    if (topic) {
+      const lowerTopic = topic.toLowerCase();
+      const slugTopic = lowerTopic.replace(/\s+/g, '-');
+      return contents.filter(
+        c =>
+          c.toLowerCase().includes(`topic: ${lowerTopic}`) ||
+          c.toLowerCase().includes(lowerTopic) ||
+          c.toLowerCase().includes(slugTopic)
+      );
+    }
+    return contents;
   }
 
   try {
@@ -570,8 +611,8 @@ export async function searchMem0Memories(
           user_id: userId,
           metadata: {
             workspaceId,
-            researchId,
-            ...(topic ? { topic } : {}),
+            ...(researchId ? { researchId } : {}),
+            // Omit exact topic metadata filter to allow semantic query to resolve different slugs/titles
           },
         },
         top_k: 15,

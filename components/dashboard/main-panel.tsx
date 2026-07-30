@@ -1,10 +1,11 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
-import { Share2, Download, Zap, Brain, Send, Paperclip, ToggleRight, Loader2 } from 'lucide-react'
+import { Share2, Download, Zap, Brain, Send, Paperclip, ToggleRight, Loader2, Trash2, X, Plus, Settings } from 'lucide-react'
 import MarkdownRenderer from '@/components/markdown-renderer'
 import ChartRenderer from '@/components/chart-renderer'
+import ChatTabModal from './chat-tab-modal'
 
 interface MainPanelProps {
   researchId: string
@@ -151,6 +152,24 @@ export default function MainPanel({ researchId }: MainPanelProps) {
   const [input, setInput] = useState('')
   const [isResearching, setIsResearching] = useState(false)
   const [responses, setResponses] = useState<any[]>([])
+  
+  const [chatTabs, setChatTabs] = useState<any[]>([])
+  const [activeTabId, setActiveTabId] = useState<string>('main')
+  const [isTabModalOpen, setIsTabModalOpen] = useState(false)
+  const [tabToEdit, setTabToEdit] = useState<any | null>(null)
+  
+  const [highlightedResponseId, setHighlightedResponseId] = useState<string | null>(null)
+  
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }
+
+  useEffect(() => {
+    scrollToBottom()
+  }, [responses, isResearching])
+  
   const [meta, setMeta] = useState<any>({
     title: 'Loading Research...',
     memory: 'Loading memory...',
@@ -158,34 +177,113 @@ export default function MainPanel({ researchId }: MainPanelProps) {
   })
   const [loading, setLoading] = useState(true)
 
+  // 1. Fetch metadata and tabs on researchId change
   useEffect(() => {
     if (!researchId) return
 
-    async function loadResearchData() {
-      setLoading(true)
+    async function loadResearchMetaAndTabs() {
       try {
         const metaRes = await fetch(`/api/research/${researchId}`)
         const metaData = await metaRes.json()
-
-        const respRes = await fetch(`/api/research/${researchId}/responses`)
-        const respData = await respRes.json()
-
-        if (metaRes.ok && respRes.ok) {
+        if (metaRes.ok) {
           setMeta({
             ...metaData.research,
             lastUpdated: 'Just now',
           })
+        }
+
+        const tabsRes = await fetch(`/api/research/${researchId}/tabs`)
+        const tabsData = await tabsRes.json()
+        if (tabsRes.ok) {
+          setChatTabs(tabsData.tabs || [])
+        }
+      } catch (err) {
+        console.error('Error fetching research details/tabs:', err)
+      }
+    }
+
+    loadResearchMetaAndTabs()
+    setActiveTabId('main')
+  }, [researchId])
+
+  // 2. Fetch responses on activeTabId change
+  useEffect(() => {
+    if (!researchId) return
+
+    async function loadResponses() {
+      setLoading(true)
+      try {
+        const respRes = await fetch(`/api/research/${researchId}/responses?chatTabId=${activeTabId}`)
+        const respData = await respRes.json()
+        if (respRes.ok) {
           setResponses(respData.responses || [])
         }
       } catch (err) {
-        console.error('Error fetching research details:', err)
+        console.error('Error fetching responses:', err)
       } finally {
         setLoading(false)
       }
     }
 
-    loadResearchData()
-  }, [researchId])
+    loadResponses()
+  }, [researchId, activeTabId])
+
+  // Listen to topic selection from the knowledge graph to scroll and glow highlight matching card
+  useEffect(() => {
+    const handleTopicSelected = (e: Event) => {
+      const { title, keywords } = (e as CustomEvent).detail;
+      if (!title) return;
+
+      const matchedResponse = responses.find((resp) => {
+        if (resp.type !== 'assistant') return false;
+
+        // Check if response summary matches or contains title (case-insensitive)
+        if (resp.summary && resp.summary.toLowerCase().includes(title.toLowerCase())) {
+          return true;
+        }
+
+        // Check if response content mentions title or any keyword
+        const contentLower = resp.content.toLowerCase();
+        if (contentLower.includes(title.toLowerCase())) {
+          return true;
+        }
+
+        if (Array.isArray(keywords)) {
+          return keywords.some((kw: string) => contentLower.includes(kw.toLowerCase()));
+        }
+
+        return false;
+      });
+
+      if (matchedResponse) {
+        // Expand response if it is collapsed
+        if (!matchedResponse.expanded) {
+          toggleExpand(matchedResponse.id, false);
+        }
+
+        // Highlight
+        setHighlightedResponseId(matchedResponse.id);
+        
+        // Scroll to card
+        setTimeout(() => {
+          const element = document.getElementById(`response-card-${matchedResponse.id}`);
+          if (element) {
+            element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }, 100);
+
+        // Clear highlight after 3 seconds
+        setTimeout(() => {
+          setHighlightedResponseId(null);
+        }, 3000);
+      }
+    };
+
+    window.addEventListener('topic-selected', handleTopicSelected);
+    return () => {
+      window.removeEventListener('topic-selected', handleTopicSelected);
+    };
+  }, [responses])
 
   const handleSend = async () => {
     if (!input.trim() || !researchId) return
@@ -201,31 +299,31 @@ export default function MainPanel({ researchId }: MainPanelProps) {
         body: JSON.stringify({
           type: 'user',
           content: userPrompt,
+          chatTabId: activeTabId,
         }),
       })
       const userData = await userRes.json()
       if (userRes.ok && userData.response) {
         setResponses((prev) => [...prev, userData.response])
       }
+    } catch (err) {
+      console.error('Error during send transaction:', err)
+    } finally {
+      setIsResearching(false)
+    }
+  }
 
-      // Simulate research thinking time
-      await new Promise((resolve) => setTimeout(resolve, 2000))
-
-      // 2. Generate and save mock agent answer turn
-      const mockReply = `### Synthetic Synthesis on: ${userPrompt}\n\nHere are the mock synthesized details matching your query. We have retrieved standard facts from public nodes:\n\n*   **Performance Delta**: Solid performance benchmarked across nodes.\n*   **Efficiency**: Standard thermal and memory metrics verified.\n*   **Constraint Check**: Validated parameters.\n\n*Later, we will design the custom AI agent to crawl the web, parse PDFs, and build this response.*`
-
+  const handleClarificationSubmit = async (choices: Record<string, string>) => {
+    setIsResearching(true)
+    try {
       const agentRes = await fetch(`/api/research/${researchId}/responses`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          type: 'assistant',
-          content: mockReply,
-          summary: `Analysis summary on "${userPrompt.slice(0, 30)}..."`,
-          sourcesCount: 3,
-          citationsCount: 4,
-          confidence: '95%',
-          expanded: true,
-          charts: [],
+          type: 'user',
+          content: 'Choices submitted for research parameters.',
+          choices: choices,
+          chatTabId: activeTabId,
         }),
       })
       const agentData = await agentRes.json()
@@ -233,7 +331,7 @@ export default function MainPanel({ researchId }: MainPanelProps) {
         setResponses((prev) => [...prev, agentData.response])
       }
     } catch (err) {
-      console.error('Error during send transaction:', err)
+      console.error('Failed to submit choices:', err)
     } finally {
       setIsResearching(false)
     }
@@ -246,7 +344,73 @@ export default function MainPanel({ researchId }: MainPanelProps) {
     )
   }
 
-  if (loading) {
+  const handleClearChat = async () => {
+    if (!researchId) return
+    if (!confirm('Are you sure you want to clear the conversation history? This cannot be undone.')) return
+    try {
+      const url = `/api/research/${researchId}/responses${activeTabId !== 'main' ? `?chatTabId=${activeTabId}` : ''}`;
+      const res = await fetch(url, {
+        method: 'DELETE',
+      })
+      if (res.ok) {
+        setResponses([])
+        window.dispatchEvent(new CustomEvent('research-cleared', { detail: { researchId } }))
+      }
+    } catch (err) {
+      console.error('Failed to clear chat:', err)
+    }
+  }
+
+  const handleSaveTab = async (tabData: { name: string; memoryMode: string; selectedNodeIds: string[] }) => {
+    try {
+      if (tabToEdit) {
+        const res = await fetch(`/api/research/${researchId}/tabs/${tabToEdit.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(tabData),
+        });
+        const data = await res.json();
+        if (res.ok && data.tab) {
+          setChatTabs((prev) => prev.map((t) => (t.id === tabToEdit.id ? data.tab : t)));
+        }
+      } else {
+        const res = await fetch(`/api/research/${researchId}/tabs`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(tabData),
+        });
+        const data = await res.json();
+        if (res.ok && data.tab) {
+          setChatTabs((prev) => [...prev, data.tab]);
+          setActiveTabId(data.tab.id);
+        }
+      }
+    } catch (err) {
+      console.error('Error saving chat tab:', err);
+    }
+    setTabToEdit(null);
+  };
+
+  const handleDeleteTab = async (tabId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!confirm('Are you sure you want to delete this chat tab and all its messages?')) return;
+
+    try {
+      const res = await fetch(`/api/research/${researchId}/tabs/${tabId}`, {
+        method: 'DELETE',
+      });
+      if (res.ok) {
+        setChatTabs((prev) => prev.filter((t) => t.id !== tabId));
+        if (activeTabId === tabId) {
+          setActiveTabId('main');
+        }
+      }
+    } catch (err) {
+      console.error('Error deleting chat tab:', err);
+    }
+  };
+
+  if (loading && responses.length === 0) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center bg-zinc-900 border-r border-zinc-800/50">
         <Loader2 className="w-10 h-10 text-emerald-500 animate-spin" />
@@ -267,6 +431,14 @@ export default function MainPanel({ researchId }: MainPanelProps) {
           <div className="flex gap-2">
             <Button
               variant="outline"
+              onClick={handleClearChat}
+              className="border-zinc-700 text-red-400 hover:text-red-300 hover:bg-zinc-800 rounded-lg cursor-pointer"
+            >
+              <Trash2 className="w-4 h-4 mr-2" />
+              Clear Chat
+            </Button>
+            <Button
+              variant="outline"
               className="border-zinc-700 text-zinc-200 hover:bg-zinc-800 rounded-lg"
             >
               <Share2 className="w-4 h-4 mr-2" />
@@ -282,8 +454,69 @@ export default function MainPanel({ researchId }: MainPanelProps) {
           </div>
         </div>
 
+        {/* Chat Tab Bar */}
+        <div className="flex items-center gap-2 mt-4 overflow-x-auto pb-1 scrollbar-thin">
+          <button
+            onClick={() => setActiveTabId('main')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all select-none border cursor-pointer ${
+              activeTabId === 'main'
+                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 font-bold'
+                : 'bg-transparent border-transparent text-zinc-400 hover:bg-zinc-800/60 hover:text-white'
+            }`}
+          >
+            <Brain className="w-3.5 h-3.5" />
+            Main Chat
+          </button>
+
+          {chatTabs.map((tab) => (
+            <div
+              key={tab.id}
+              onClick={() => setActiveTabId(tab.id)}
+              className={`group flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all select-none border cursor-pointer ${
+                activeTabId === tab.id
+                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 font-bold'
+                  : 'bg-transparent border-transparent text-zinc-400 hover:bg-zinc-800/60 hover:text-white'
+              }`}
+            >
+              <span>{tab.name}</span>
+              
+              {/* Settings / Edit */}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setTabToEdit(tab);
+                  setIsTabModalOpen(true);
+                }}
+                className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-zinc-700/60 rounded text-zinc-400 hover:text-white transition-opacity"
+              >
+                <Settings className="w-3 h-3" />
+              </button>
+
+              {/* Delete */}
+              <button
+                onClick={(e) => handleDeleteTab(tab.id, e)}
+                className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-zinc-700/60 rounded text-zinc-400 hover:text-red-400 transition-opacity"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+          ))}
+
+          {/* Create New Tab Button */}
+          <button
+            onClick={() => {
+              setTabToEdit(null);
+              setIsTabModalOpen(true);
+            }}
+            className="p-1.5 rounded-lg border border-dashed border-zinc-700 hover:border-zinc-500 hover:bg-zinc-800/40 text-zinc-400 hover:text-white transition-colors cursor-pointer"
+            title="Create Custom Chat Tab"
+          >
+            <Plus className="w-3.5 h-3.5" />
+          </button>
+        </div>
+
         {/* Memory & Status Bar */}
-        <div className="flex items-center gap-4 text-sm">
+        <div className="flex items-center gap-4 text-sm mt-4">
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/20">
             <Brain className="w-4 h-4 text-emerald-400" />
             <span className="text-emerald-300">Memory: {meta.memory || 'No aggregated memory yet.'}</span>
@@ -296,29 +529,58 @@ export default function MainPanel({ researchId }: MainPanelProps) {
         {responses.map((response: any) => (
           <div key={response.id} className="space-y-3">
             {response.type === 'assistant' ? (
-              <div className="bg-zinc-800 rounded-2xl p-6 border border-zinc-700/50">
+              <div 
+                id={`response-card-${response.id}`}
+                className={`bg-zinc-800 rounded-2xl p-6 border transition-all duration-500 ${
+                  response.id === highlightedResponseId 
+                    ? 'border-emerald-500 ring-2 ring-emerald-500/30 bg-emerald-500/[0.03] shadow-lg shadow-emerald-500/10' 
+                    : 'border-zinc-700/50'
+                }`}
+              >
                 {/* Response Content */}
                 <div className="mb-4">
-                  {response.expanded ? (
-                    <div className="space-y-4">
-                      {response.summary && (
-                        <h2 className="text-lg font-semibold text-white">{response.summary}</h2>
-                      )}
-                      <MarkdownRenderer content={response.content} />
-                      {/* Render Charts if present */}
-                      {response.charts &&
-                        response.charts.map((chart: any, idx: number) => (
-                          <div key={idx} className="mt-4 p-4 bg-zinc-900 rounded-lg border border-zinc-700">
-                            <ChartRenderer config={chart} />
-                          </div>
-                        ))}
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      <h2 className="text-base font-semibold text-zinc-200">{response.summary || 'Summary'}</h2>
-                      <p className="text-sm text-zinc-400">Expand research details below.</p>
-                    </div>
-                  )}
+                  {(() => {
+                    let clarificationData = null;
+                    const trimmed = response.content.trim();
+                    if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+                      try {
+                        const parsed = JSON.parse(trimmed);
+                        if (parsed.isClarification) {
+                          clarificationData = parsed;
+                        }
+                      } catch (e) {}
+                    }
+
+                    if (clarificationData) {
+                      return (
+                        <ClarificationForm
+                          questions={clarificationData.questions}
+                          onSubmit={handleClarificationSubmit}
+                        />
+                      );
+                    }
+
+                    return response.expanded ? (
+                      <div className="space-y-4">
+                        {response.summary && (
+                          <h2 className="text-lg font-semibold text-white">{response.summary}</h2>
+                        )}
+                        <MarkdownRenderer content={response.content} />
+                        {/* Render Charts if present */}
+                        {response.charts &&
+                          response.charts.map((chart: any, idx: number) => (
+                            <div key={idx} className="mt-4 p-4 bg-zinc-900 rounded-lg border border-zinc-700">
+                              <ChartRenderer config={chart} />
+                            </div>
+                          ))}
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        <h2 className="text-base font-semibold text-zinc-200">{response.summary || 'Summary'}</h2>
+                        <p className="text-sm text-zinc-400">Expand research details below.</p>
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 {/* Metadata */}
@@ -369,6 +631,7 @@ export default function MainPanel({ researchId }: MainPanelProps) {
             </div>
           </div>
         )}
+        <div ref={messagesEndRef} />
       </div>
 
       {/* Chat Composer */}
@@ -424,7 +687,79 @@ export default function MainPanel({ researchId }: MainPanelProps) {
           </div>
         </div>
       </div>
+      {/* Chat Tab Configuration Modal */}
+      <ChatTabModal
+        isOpen={isTabModalOpen}
+        onClose={() => {
+          setIsTabModalOpen(false);
+          setTabToEdit(null);
+        }}
+        researchId={researchId}
+        tabToEdit={tabToEdit}
+        onSave={handleSaveTab}
+      />
     </div>
   )
 }
+
+interface ClarificationFormProps {
+  questions: Array<{ id: string; question: string; choices: string[] }>;
+  onSubmit: (choices: Record<string, string>) => void;
+}
+
+function ClarificationForm({ questions, onSubmit }: ClarificationFormProps) {
+  const [selections, setSelections] = useState<Record<string, string>>({});
+
+  const handleSelect = (questionId: string, choice: string) => {
+    setSelections((prev) => ({
+      ...prev,
+      [questionId]: choice,
+    }));
+  };
+
+  const isComplete = questions.every((q) => selections[q.id] !== undefined);
+
+  return (
+    <div className="p-5 bg-zinc-900/60 backdrop-blur-md rounded-2xl border border-zinc-800 space-y-4 my-3">
+      <div className="flex items-center gap-2.5 text-emerald-400 font-semibold text-sm pb-3 border-b border-zinc-800/80">
+        <Brain className="w-5 h-5 animate-pulse text-emerald-500" />
+        <span>Select Research Parameters</span>
+      </div>
+      <div className="space-y-4 pt-1">
+        {questions.map((q) => (
+          <div key={q.id} className="space-y-2">
+            <p className="text-xs font-semibold text-zinc-300 uppercase tracking-wider">{q.question}</p>
+            <div className="flex flex-wrap gap-2">
+              {q.choices.map((choice) => {
+                const isSelected = selections[q.id] === choice;
+                return (
+                  <button
+                    key={choice}
+                    type="button"
+                    onClick={() => handleSelect(q.id, choice)}
+                    className={`px-3.5 py-1.5 rounded-full text-xs font-medium border transition-all cursor-pointer ${
+                      isSelected
+                        ? 'bg-emerald-500 border-emerald-400 text-black shadow-[0_0_15px_rgba(16,185,129,0.25)]'
+                        : 'bg-zinc-850 border-zinc-700/85 text-zinc-400 hover:border-zinc-500 hover:text-zinc-200'
+                    }`}
+                  >
+                    {choice}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+      <Button
+        onClick={() => onSubmit(selections)}
+        disabled={!isComplete}
+        className="w-full bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-black disabled:text-zinc-500 font-semibold text-xs py-2.5 rounded-xl transition-all mt-3 cursor-pointer shadow-[0_4px_12px_rgba(16,185,129,0.1)]"
+      >
+        Submit Choices & Compile Research Report →
+      </Button>
+    </div>
+  );
+}
+
 

@@ -123,9 +123,9 @@ export default function ChatTabModal({
               onChange={(e) => setMemoryMode(e.target.value)}
               className="w-full px-4 py-2.5 bg-zinc-850 border border-zinc-700/80 rounded-xl text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all cursor-pointer"
             >
-              <option value="research">This Research Card Memory (Default)</option>
-              <option value="workspace">All Workspace Memory (Cross-Card)</option>
-              <option value="custom">Custom Topic Nodes (Selective Knowledge Paths)</option>
+              <option value="research" className="bg-zinc-900 text-white">This Research Card Memory (Default)</option>
+              <option value="workspace" className="bg-zinc-900 text-white">All Workspace Memory (Cross-Card)</option>
+              <option value="custom" className="bg-zinc-900 text-white">Custom Topic Nodes (Selective Knowledge Paths)</option>
             </select>
             <p className="text-zinc-500 text-[11px] mt-1.5 leading-relaxed">
               {memoryMode === 'research' && 'Restricts context search only to items and memories learned within this card.'}

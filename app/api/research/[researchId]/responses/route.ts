@@ -254,7 +254,7 @@ export async function POST(request: Request, { params }: RouteParams) {
               .where(inArray(researchTopics.id, nodeIds));
 
             for (const topic of selectedTopics) {
-              const topicMems = await searchMem0Memories(userId, workspaceId, researchId, topic.title);
+              const topicMems = await searchMem0Memories(userId, workspaceId, null, topic.title);
               memories.push(...topicMems);
             }
           }
@@ -276,7 +276,7 @@ export async function POST(request: Request, { params }: RouteParams) {
         .find((h) => h.type === 'user' && !h.content.includes('Choices submitted'))?.content || content;
 
       // Extract topic from last query for memory categorization
-      const queryAnalysis = await analyzeQuery(lastUserMessage, history.slice(0, -1));
+      const queryAnalysis = await analyzeQuery(lastUserMessage, history.slice(0, -1), memories);
       const topic = queryAnalysis.topic || 'general';
 
       const reportData = await generateResearchReport(lastUserMessage, choices, history.slice(0, -1), memories);
@@ -332,23 +332,24 @@ export async function POST(request: Request, { params }: RouteParams) {
       }
 
       // Save facts / memory
+      const memoryTopic = reportData.topicMetadata?.topic || topic;
       if (reportData.facts && reportData.facts.length > 0) {
         for (const fact of reportData.facts) {
-          await addMem0Memory(userId, workspaceId, researchId, topic, fact);
+          await addMem0Memory(userId, workspaceId, researchId, memoryTopic, fact);
         }
       } else {
         await addMem0Memory(
           userId,
           workspaceId,
           researchId,
-          topic,
+          memoryTopic,
           `User researched '${lastUserMessage}' with criteria: ${JSON.stringify(choices)}.`
         );
       }
 
     } else {
       // CASE B: Standard user query, run Planner Agent check
-      const queryAnalysis = await analyzeQuery(content, history.slice(0, -1));
+      const queryAnalysis = await analyzeQuery(content, history.slice(0, -1), memories);
       const topic = queryAnalysis.topic || 'general';
 
       if (queryAnalysis.intent === 'conversational') {
@@ -450,17 +451,18 @@ export async function POST(request: Request, { params }: RouteParams) {
         }
 
         // Save facts / memory
+        const memoryTopic = reportData.topicMetadata?.topic || topic;
         if (reportData.facts && reportData.facts.length > 0) {
           for (const fact of reportData.facts) {
-            await addMem0Memory(userId, workspaceId, researchId, topic, fact);
+            await addMem0Memory(userId, workspaceId, researchId, memoryTopic, fact);
           }
         } else {
           await addMem0Memory(
             userId,
             workspaceId,
             researchId,
-            topic,
-            `User researched '${content}' under topic: ${topic}.`
+            memoryTopic,
+            `User researched '${content}' under topic: ${memoryTopic}.`
           );
         }
       }
