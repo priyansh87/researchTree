@@ -48,9 +48,20 @@ export const researchItems = pgTable('research_items', {
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });
 
+export const chatTabs = pgTable('chat_tabs', {
+  id: text('id').primaryKey(),
+  researchId: text('research_id').notNull().references(() => researchItems.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  memoryMode: text('memory_mode').notNull().default('research'), // 'workspace' | 'research' | 'custom'
+  selectedNodeIds: jsonb('selected_node_ids').notNull().default('[]'), // array of active topic/node IDs
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+});
+
 export const researchResponses = pgTable('research_responses', {
   id: text('id').primaryKey(),
   researchId: text('research_id').notNull().references(() => researchItems.id, { onDelete: 'cascade' }),
+  chatTabId: text('chat_tab_id').references(() => chatTabs.id, { onDelete: 'cascade' }),
   type: text('type').notNull(), // 'user' | 'assistant'
   content: text('content').notNull(),
   summary: text('summary'),
@@ -86,4 +97,15 @@ export const relatedResearch = pgTable('related_research', {
   title: text('title').notNull(),
   icon: text('icon').notNull().default('📄'),
   studies: integer('studies').notNull().default(0),
+});
+
+export const researchTopics = pgTable('research_topics', {
+  id: text('id').primaryKey(),
+  researchId: text('research_id').notNull().references(() => researchItems.id, { onDelete: 'cascade' }),
+  title: text('title').notNull(),
+  summary: text('summary').notNull(),
+  keywords: jsonb('keywords').notNull().default('[]'),
+  parentId: text('parent_id'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });

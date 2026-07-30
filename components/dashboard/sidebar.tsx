@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
-import { ChevronDown, Plus, MoreHorizontal, Search, Settings, LogOut, FileText } from 'lucide-react'
+import { ChevronDown, Plus, MoreHorizontal, Search, Settings, LogOut, FileText, Network } from 'lucide-react'
 import { authClient } from '@/lib/auth/client'
 
 interface Folder {
@@ -28,6 +28,8 @@ interface SidebarProps {
   folders: Folder[]
   researchItems: ResearchItem[]
   user?: { name?: string | null; email?: string | null; image?: string | null } | null
+  currentView?: 'chat' | 'graph'
+  onSelectView?: (view: 'chat' | 'graph') => void
 }
 
 export default function Sidebar({
@@ -38,7 +40,9 @@ export default function Sidebar({
   workspaceId,
   folders,
   researchItems,
-  user
+  user,
+  currentView = 'chat',
+  onSelectView
 }: SidebarProps) {
   const router = useRouter()
   const [expandedFolders, setExpandedFolders] = useState<string[]>(['hardware'])
@@ -47,6 +51,7 @@ export default function Sidebar({
 
   const handleSelectResearch = (id: string) => {
     onSelectResearch(id)
+    if (onSelectView) onSelectView('chat')
     if (workspaceId) {
       router.push(`/dashboard/${workspaceId}/research/${id}`)
     }
@@ -135,10 +140,25 @@ export default function Sidebar({
       <div className="p-4 border-b border-zinc-800/50">
         <Button
           onClick={onNewResearchClick}
-          className="w-full bg-emerald-500 text-white hover:bg-emerald-600 rounded-lg flex items-center gap-2 justify-center"
+          className="w-full bg-emerald-500 text-white hover:bg-emerald-600 rounded-lg flex items-center gap-2 justify-center cursor-pointer"
         >
           <Plus className="w-4 h-4" />
           New Research
+        </Button>
+      </div>
+
+      {/* Workspace Graph Navigation */}
+      <div className="p-4 border-b border-zinc-800/50">
+        <Button
+          onClick={() => onSelectView?.('graph')}
+          className={`w-full flex items-center gap-2 justify-center rounded-lg border transition-colors cursor-pointer py-2 ${
+            currentView === 'graph'
+              ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+              : 'bg-transparent text-zinc-300 border-zinc-700/80 hover:bg-zinc-850'
+          }`}
+        >
+          <Network className="w-4 h-4" />
+          Workspace Graph
         </Button>
       </div>
 

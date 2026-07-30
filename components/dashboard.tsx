@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import Sidebar from './dashboard/sidebar'
 import MainPanel from './dashboard/main-panel'
 import RightPanel from './dashboard/right-panel'
+import WorkspaceGraph from './dashboard/workspace-graph'
 import NewResearchModal from './new-research-modal'
 import { authClient } from '@/lib/auth/client'
 import { Loader2 } from 'lucide-react'
@@ -17,6 +18,7 @@ interface DashboardProps {
 export default function Dashboard({ onLogoClick, workspaceId, selectedResearchId: initialResearchId }: DashboardProps) {
   const { data: session, isPending: sessionLoading } = authClient.useSession()
   const [selectedResearchId, setSelectedResearchId] = useState(initialResearchId || '')
+  const [currentView, setCurrentView] = useState<'chat' | 'graph'>('chat')
   const [rightPanelTab, setRightPanelTab] = useState<'tree' | 'memory' | 'related' | 'sources'>('tree')
   const [isNewResearchModalOpen, setIsNewResearchModalOpen] = useState(false)
 
@@ -76,12 +78,31 @@ export default function Dashboard({ onLogoClick, workspaceId, selectedResearchId
       if (response.ok && data.research) {
         setResearchItems(prev => [...prev, data.research])
         setSelectedResearchId(data.research.id)
+        setCurrentView('chat')
         setIsNewResearchModalOpen(false)
       } else {
         alert(data.error || 'Failed to create research')
       }
     } catch (err) {
       alert('Error creating research item')
+    }
+  }
+
+  const handleGraphNavigate = (researchId: string, topicTitle?: string, keywords?: string[]) => {
+    setSelectedResearchId(researchId)
+    setCurrentView('chat')
+
+    if (topicTitle) {
+      setTimeout(() => {
+        window.dispatchEvent(
+          new CustomEvent('topic-selected', {
+            detail: {
+              title: topicTitle,
+              keywords: keywords || [],
+            },
+          })
+        )
+      }, 350)
     }
   }
 
@@ -106,10 +127,17 @@ export default function Dashboard({ onLogoClick, workspaceId, selectedResearchId
         folders={folders}
         researchItems={researchItems}
         user={session?.user}
+        currentView={currentView}
+        onSelectView={setCurrentView}
       />
 
-      {/* Main Panel */}
-      {selectedResearchId ? (
+      {/* Main Panel or Workspace Graph View */}
+      {currentView === 'graph' ? (
+        <WorkspaceGraph 
+          workspaceId={workspaceId || 'current'} 
+          onNavigate={handleGraphNavigate} 
+        />
+      ) : selectedResearchId ? (
         <MainPanel researchId={selectedResearchId} />
       ) : (
         <div className="flex-1 flex flex-col items-center justify-center bg-zinc-900 border-r border-zinc-800/50 p-6 text-center">
@@ -123,8 +151,13 @@ export default function Dashboard({ onLogoClick, workspaceId, selectedResearchId
       )}
 
       {/* Right Panel */}
-      {selectedResearchId && (
-        <RightPanel activeTab={rightPanelTab} onTabChange={setRightPanelTab} researchId={selectedResearchId} />
+      {currentView === 'chat' && selectedResearchId && (
+        <RightPanel
+          activeTab={rightPanelTab}
+          onTabChange={setRightPanelTab}
+          researchId={selectedResearchId}
+          workspaceId={workspaceId || 'current'}
+        />
       )}
 
       {/* New Research Modal */}

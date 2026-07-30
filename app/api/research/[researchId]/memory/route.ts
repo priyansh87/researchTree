@@ -26,6 +26,8 @@ async function checkResearchAccess(researchId: string, userId: string) {
   return !!member;
 }
 
+import { searchMem0Memories } from '@/lib/agents/research-agent';
+
 // GET all memory items for a research
 export async function GET(request: Request, { params }: RouteParams) {
   const { data: session } = await auth.getSession();
@@ -42,12 +44,35 @@ export async function GET(request: Request, { params }: RouteParams) {
       return NextResponse.json({ error: 'Unauthorized research access' }, { status: 403 });
     }
 
-    const items = await db
+    const [research] = await db
       .select()
-      .from(memoryItems)
-      .where(eq(memoryItems.researchId, researchId));
+      .from(researchItems)
+      .where(eq(researchItems.id, researchId));
 
-    return NextResponse.json({ memory: items });
+    if (!research) {
+      return NextResponse.json({ error: 'Research not found' }, { status: 404 });
+    }
+
+    const workspaceId = research.workspaceId;
+
+    // Fetch memory items using the agent helper
+    const memories = await searchMem0Memories(userId, workspaceId, researchId);
+    
+    // Map list of strings to client-expected objects with IDs
+    const mappedMemories = memories.map((m: any, index: number) => {
+      if (typeof m === 'object' && m !== null) {
+        return {
+          id: m.id || `mem-${index}`,
+          content: m.content || m.memory || JSON.stringify(m),
+        };
+      }
+      return {
+        id: `mem-${index}`,
+        content: String(m),
+      };
+    });
+
+    return NextResponse.json({ memory: mappedMemories });
   } catch (error: any) {
     console.error('Error fetching memories:', error);
     return NextResponse.json({ error: error?.message || 'Failed to fetch memories' }, { status: 500 });
