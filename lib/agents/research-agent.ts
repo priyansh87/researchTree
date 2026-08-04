@@ -622,6 +622,34 @@ export async function searchMem0Memories(
     if (res.ok) {
       const data = await res.json();
       const arrayData = Array.isArray(data) ? data : (data.results || []);
+      if (topic) {
+        const lowerTopic = topic.toLowerCase().trim();
+        const slugTopic = lowerTopic.replace(/\s+/g, '-');
+        return arrayData.filter((m: any) => {
+          if (typeof m === 'object' && m !== null) {
+            const memMetadata = m.metadata || {};
+            const memTopic = (memMetadata.topic || '').toLowerCase().trim();
+            const memSlug = memTopic.replace(/\s+/g, '-');
+            const memText = (m.memory || m.content || '').toLowerCase();
+            return (
+              memTopic === lowerTopic ||
+              memSlug === slugTopic ||
+              memTopic.includes(lowerTopic) ||
+              lowerTopic.includes(memTopic) ||
+              memText.includes(`topic: ${lowerTopic}`) ||
+              memText.includes(slugTopic)
+            );
+          }
+          if (typeof m === 'string') {
+            const lowerM = m.toLowerCase();
+            return (
+              lowerM.includes(lowerTopic) ||
+              lowerM.includes(slugTopic)
+            );
+          }
+          return false;
+        });
+      }
       return arrayData;
     } else {
       const text = await res.text();
