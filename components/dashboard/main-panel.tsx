@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
-import { Share2, Download, Zap, Brain, Send, Paperclip, ToggleRight, Loader2, Trash2, X, Plus, Settings } from 'lucide-react'
+import { Share2, Download, Zap, Brain, Send, Paperclip, ToggleRight, Loader2, Trash2, X, Plus, Settings, SlidersHorizontal, MoreVertical, ThumbsUp, ThumbsDown, ArrowUp } from 'lucide-react'
 import MarkdownRenderer from '@/components/markdown-renderer'
 import ChartRenderer from '@/components/chart-renderer'
 import ChatTabModal from './chat-tab-modal'
@@ -10,143 +10,6 @@ import ChatTabModal from './chat-tab-modal'
 interface MainPanelProps {
   researchId: string
 }
-
-const researchData: Record<string, any> = {
-  'gaming-laptop': {
-    title: 'Gaming Laptop Research',
-    lastUpdated: '2 hours ago',
-    memory: 'High-end gaming (RTX 4060+)',
-    responses: [
-      {
-        id: 1,
-        type: 'assistant',
-        content: `# Gaming Laptop Comparison
-
-Based on current market research, here are the top gaming laptops:
-
-## Best Overall
-**ASUS TUF A16 Advantage Edition**
-- GPU: RTX 4060 (8GB)
-- CPU: Ryzen 9 7945HX3D
-- RAM: 32GB DDR5
-- Display: 16" 240Hz
-- Price: $1,499
-
-## Best Value
-**Lenovo Legion 5 Pro**
-- GPU: RTX 4060
-- CPU: Ryzen 7 7745HX
-- RAM: 16GB DDR5
-- Display: 16" 165Hz
-- Price: $999
-
-## Performance Leader
-**MSI Raider GE78 HX**
-- GPU: RTX 4090
-- CPU: Intel i9-13900HX
-- RAM: 32GB DDR5
-- Display: 17.3" 240Hz
-- Price: $2,499`,
-        summary: 'Top gaming laptops for 2024 with performance and value comparisons',
-        sources: 3,
-        citations: 5,
-        confidence: '92%',
-        expanded: true,
-      },
-      {
-        id: 2,
-        type: 'user',
-        content: 'What about battery life and thermal performance?',
-      },
-      {
-        id: 3,
-        type: 'assistant',
-        content: `## Battery & Thermal Analysis
-
-### Battery Performance
-- ASUS TUF: 6-7 hours (efficiency mode)
-- Lenovo Legion: 7-8 hours (best in class)
-- MSI Raider: 3-4 hours (power-hungry GPU)
-
-### Thermal Management
-All three feature:
-- Vapor chamber cooling
-- Multiple heat pipes
-- Efficient fan control
-- Average temps: 75-85°C under load`,
-        summary: 'Battery and thermal performance comparison',
-        sources: 2,
-        citations: 3,
-        confidence: '88%',
-        expanded: false,
-      },
-      {
-        id: 4,
-        type: 'assistant',
-        content: `## Price to Performance Analysis
-
-Here's a detailed comparison of the three laptops across key metrics:
-
-\`\`\`json
-{
-  "chart": {
-    "type": "bar",
-    "title": "Gaming Laptop Price-to-Performance Ratio",
-    "xAxis": "laptop",
-    "dataKey": "value",
-    "categories": ["Performance", "Value", "Thermal"],
-    "data": [
-      {
-        "laptop": "ASUS TUF",
-        "Performance": 8.5,
-        "Value": 7.2,
-        "Thermal": 8.8
-      },
-      {
-        "laptop": "Lenovo Legion",
-        "Performance": 8.2,
-        "Value": 9.1,
-        "Thermal": 8.5
-      },
-      {
-        "laptop": "MSI Raider",
-        "Performance": 9.5,
-        "Value": 6.8,
-        "Thermal": 7.2
-      }
-    ]
-  }
-}
-\`\`\`
-
-### Key Findings
-- **MSI Raider** dominates in raw performance but has higher costs
-- **Lenovo Legion** offers the best value proposition
-- All three have solid thermal performance
-`,
-        summary: 'Detailed price-to-performance analysis with visual comparison',
-        sources: 4,
-        citations: 6,
-        confidence: '94%',
-        expanded: true,
-        charts: [
-          {
-            type: 'bar',
-            title: 'Gaming Laptop Price-to-Performance Ratio',
-            xAxis: 'laptop',
-            categories: ['Performance', 'Value', 'Thermal'],
-            data: [
-              { laptop: 'ASUS TUF', Performance: 8.5, Value: 7.2, Thermal: 8.8 },
-              { laptop: 'Lenovo Legion', Performance: 8.2, Value: 9.1, Thermal: 8.5 },
-              { laptop: 'MSI Raider', Performance: 9.5, Value: 6.8, Thermal: 7.2 },
-            ],
-          },
-        ],
-      },
-    ],
-  },
-}
-
 
 export default function MainPanel({ researchId }: MainPanelProps) {
   const [input, setInput] = useState('')
@@ -159,6 +22,7 @@ export default function MainPanel({ researchId }: MainPanelProps) {
   const [tabToEdit, setTabToEdit] = useState<any | null>(null)
   
   const [highlightedResponseId, setHighlightedResponseId] = useState<string | null>(null)
+  const [sourceCount, setSourceCount] = useState(0)
   
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
@@ -177,7 +41,7 @@ export default function MainPanel({ researchId }: MainPanelProps) {
   })
   const [loading, setLoading] = useState(true)
 
-  // 1. Fetch metadata and tabs on researchId change
+  // 1. Fetch metadata, tabs and sources count on researchId change
   useEffect(() => {
     if (!researchId) return
 
@@ -197,13 +61,33 @@ export default function MainPanel({ researchId }: MainPanelProps) {
         if (tabsRes.ok) {
           setChatTabs(tabsData.tabs || [])
         }
+
+        const sourcesRes = await fetch(`/api/research/${researchId}/sources`)
+        const sourcesData = await sourcesRes.json()
+        if (sourcesRes.ok) {
+          setSourceCount((sourcesData.sources || []).length)
+        }
       } catch (err) {
-        console.error('Error fetching research details/tabs:', err)
+        console.error('Error fetching research details/tabs/sources:', err)
       }
     }
 
     loadResearchMetaAndTabs()
     setActiveTabId('main')
+
+    const handleSourcesUpdated = async () => {
+      try {
+        const res = await fetch(`/api/research/${researchId}/sources`)
+        const data = await res.json()
+        if (res.ok) {
+          setSourceCount((data.sources || []).length)
+        }
+      } catch (e) {}
+    }
+    window.addEventListener('sources-updated', handleSourcesUpdated)
+    return () => {
+      window.removeEventListener('sources-updated', handleSourcesUpdated)
+    }
   }, [researchId])
 
   // 2. Fetch responses on activeTabId change
@@ -226,6 +110,17 @@ export default function MainPanel({ researchId }: MainPanelProps) {
     }
 
     loadResponses()
+  }, [researchId, activeTabId])
+
+  // 3. Listen to global clear-active-chat event
+  useEffect(() => {
+    const handleGlobalClear = () => {
+      handleClearChat()
+    }
+    window.addEventListener('clear-active-chat', handleGlobalClear)
+    return () => {
+      window.removeEventListener('clear-active-chat', handleGlobalClear)
+    }
   }, [researchId, activeTabId])
 
   // Listen to topic selection from the knowledge graph to scroll and glow highlight matching card
@@ -303,8 +198,11 @@ export default function MainPanel({ researchId }: MainPanelProps) {
         }),
       })
       const userData = await userRes.json()
-      if (userRes.ok && userData.response) {
-        setResponses((prev) => [...prev, userData.response])
+      if (userRes.ok) {
+        const newResponses = [];
+        if (userData.userResponse) newResponses.push(userData.userResponse);
+        if (userData.response) newResponses.push(userData.response);
+        setResponses((prev) => [...prev, ...newResponses]);
       }
     } catch (err) {
       console.error('Error during send transaction:', err)
@@ -327,8 +225,11 @@ export default function MainPanel({ researchId }: MainPanelProps) {
         }),
       })
       const agentData = await agentRes.json()
-      if (agentRes.ok && agentData.response) {
-        setResponses((prev) => [...prev, agentData.response])
+      if (agentRes.ok) {
+        const newResponses = [];
+        if (agentData.userResponse) newResponses.push(agentData.userResponse);
+        if (agentData.response) newResponses.push(agentData.response);
+        setResponses((prev) => [...prev, ...newResponses]);
       }
     } catch (err) {
       console.error('Failed to submit choices:', err)
@@ -412,59 +313,38 @@ export default function MainPanel({ researchId }: MainPanelProps) {
 
   if (loading && responses.length === 0) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center bg-zinc-900 border-r border-zinc-800/50">
-        <Loader2 className="w-10 h-10 text-emerald-500 animate-spin" />
-        <p className="text-zinc-400 text-sm mt-3">Syncing research history...</p>
+      <div className="flex-1 flex flex-col items-center justify-center bg-transparent">
+        <Loader2 className="w-8 h-8 text-emerald-500 animate-spin" />
+        <p className="text-zinc-500 text-xs mt-3">Syncing research history...</p>
       </div>
     )
   }
 
   return (
-    <div className="flex-1 flex flex-col bg-zinc-900 border-r border-zinc-800/50">
-      {/* Header */}
-      <div className="px-8 py-6 border-b border-zinc-800/50">
-        <div className="flex items-start justify-between mb-4">
-          <div>
-            <h1 className="text-2xl font-bold text-white mb-1">{meta.title}</h1>
-            <p className="text-sm text-zinc-400">Last updated {meta.lastUpdated}</p>
+    <div className="flex-1 flex flex-col bg-transparent h-full relative">
+      {/* Sleek Chat Panel Header */}
+      <div className="px-6 py-4 flex flex-col border-b border-zinc-900/50 bg-[#111113] shrink-0">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <h2 className="text-sm font-bold text-white uppercase tracking-wider">Chat</h2>
           </div>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              onClick={handleClearChat}
-              className="border-zinc-700 text-red-400 hover:text-red-300 hover:bg-zinc-800 rounded-lg cursor-pointer"
-            >
-              <Trash2 className="w-4 h-4 mr-2" />
-              Clear Chat
-            </Button>
-            <Button
-              variant="outline"
-              className="border-zinc-700 text-zinc-200 hover:bg-zinc-800 rounded-lg"
-            >
-              <Share2 className="w-4 h-4 mr-2" />
-              Share
-            </Button>
-            <Button
-              variant="outline"
-              className="border-zinc-700 text-zinc-200 hover:bg-zinc-800 rounded-lg"
-            >
-              <Download className="w-4 h-4 mr-2" />
-              Export PDF
-            </Button>
+          <div className="flex items-center gap-2.5 text-zinc-500">
+            <SlidersHorizontal className="w-4 h-4 hover:text-white cursor-pointer transition-colors" />
+            <MoreVertical className="w-4 h-4 hover:text-white cursor-pointer transition-colors" />
           </div>
         </div>
 
         {/* Chat Tab Bar */}
-        <div className="flex items-center gap-2 mt-4 overflow-x-auto pb-1 scrollbar-thin">
+        <div className="flex items-center gap-2 mt-3 overflow-x-auto pb-1 scrollbar-none">
           <button
             onClick={() => setActiveTabId('main')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all select-none border cursor-pointer ${
+            className={`px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1.5 transition-all select-none border cursor-pointer ${
               activeTabId === 'main'
                 ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 font-bold'
-                : 'bg-transparent border-transparent text-zinc-400 hover:bg-zinc-800/60 hover:text-white'
+                : 'bg-transparent border-transparent text-zinc-400 hover:text-zinc-200'
             }`}
           >
-            <Brain className="w-3.5 h-3.5" />
+            <Brain className="w-3 h-3" />
             Main Chat
           </button>
 
@@ -472,10 +352,10 @@ export default function MainPanel({ researchId }: MainPanelProps) {
             <div
               key={tab.id}
               onClick={() => setActiveTabId(tab.id)}
-              className={`group flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all select-none border cursor-pointer ${
+              className={`group flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold border transition-all select-none cursor-pointer ${
                 activeTabId === tab.id
                   ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 font-bold'
-                  : 'bg-transparent border-transparent text-zinc-400 hover:bg-zinc-800/60 hover:text-white'
+                  : 'bg-transparent border-transparent text-zinc-400 hover:text-zinc-200'
               }`}
             >
               <span>{tab.name}</span>
@@ -487,17 +367,17 @@ export default function MainPanel({ researchId }: MainPanelProps) {
                   setTabToEdit(tab);
                   setIsTabModalOpen(true);
                 }}
-                className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-zinc-700/60 rounded text-zinc-400 hover:text-white transition-opacity"
+                className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-zinc-800 rounded text-zinc-500 hover:text-white transition-opacity"
               >
-                <Settings className="w-3 h-3" />
+                <Settings className="w-2.5 h-2.5" />
               </button>
 
               {/* Delete */}
               <button
                 onClick={(e) => handleDeleteTab(tab.id, e)}
-                className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-zinc-700/60 rounded text-zinc-400 hover:text-red-400 transition-opacity"
+                className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-zinc-800 rounded text-zinc-500 hover:text-red-400 transition-opacity"
               >
-                <X className="w-3 h-3" />
+                <X className="w-2.5 h-2.5" />
               </button>
             </div>
           ))}
@@ -508,37 +388,29 @@ export default function MainPanel({ researchId }: MainPanelProps) {
               setTabToEdit(null);
               setIsTabModalOpen(true);
             }}
-            className="p-1.5 rounded-lg border border-dashed border-zinc-700 hover:border-zinc-500 hover:bg-zinc-800/40 text-zinc-400 hover:text-white transition-colors cursor-pointer"
+            className="p-1 rounded-full border border-dashed border-zinc-800 hover:border-zinc-700 hover:bg-zinc-900/60 text-zinc-500 hover:text-white transition-colors cursor-pointer"
             title="Create Custom Chat Tab"
           >
-            <Plus className="w-3.5 h-3.5" />
+            <Plus className="w-3 h-3" />
           </button>
-        </div>
-
-        {/* Memory & Status Bar */}
-        <div className="flex items-center gap-4 text-sm mt-4">
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/20">
-            <Brain className="w-4 h-4 text-emerald-400" />
-            <span className="text-emerald-300">Memory: {meta.memory || 'No aggregated memory yet.'}</span>
-          </div>
         </div>
       </div>
 
-      {/* Responses */}
-      <div className="flex-1 overflow-y-auto px-8 py-6 space-y-6">
+      {/* Message List */}
+      <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6 scrollbar-thin">
         {responses.map((response: any) => (
-          <div key={response.id} className="space-y-3">
+          <div key={response.id} className="space-y-2.5">
             {response.type === 'assistant' ? (
               <div 
                 id={`response-card-${response.id}`}
-                className={`bg-zinc-800 rounded-2xl p-6 border transition-all duration-500 ${
+                className={`bg-zinc-900/35 hover:bg-zinc-900/55 border rounded-2xl p-5 transition-all duration-500 relative group flex flex-col gap-3.5 ${
                   response.id === highlightedResponseId 
-                    ? 'border-emerald-500 ring-2 ring-emerald-500/30 bg-emerald-500/[0.03] shadow-lg shadow-emerald-500/10' 
-                    : 'border-zinc-700/50'
+                    ? 'border-emerald-500 ring-2 ring-emerald-500/25 bg-emerald-500/[0.02] shadow-lg shadow-emerald-500/5' 
+                    : 'border-zinc-900 hover:border-zinc-800'
                 }`}
               >
-                {/* Response Content */}
-                <div className="mb-4">
+                {/* Content */}
+                <div>
                   {(() => {
                     let clarificationData = null;
                     const trimmed = response.content.trim();
@@ -563,70 +435,61 @@ export default function MainPanel({ researchId }: MainPanelProps) {
                     return response.expanded ? (
                       <div className="space-y-4">
                         {response.summary && (
-                          <h2 className="text-lg font-semibold text-white">{response.summary}</h2>
+                          <h3 className="text-md font-bold text-white tracking-wide border-l-2 border-emerald-500 pl-3">
+                            {response.summary}
+                          </h3>
                         )}
                         <MarkdownRenderer content={response.content} />
-                        {/* Render Charts if present */}
                         {response.charts &&
                           response.charts.map((chart: any, idx: number) => (
-                            <div key={idx} className="mt-4 p-4 bg-zinc-900 rounded-lg border border-zinc-700">
+                            <div key={idx} className="mt-4 p-4 bg-zinc-950/60 rounded-xl border border-zinc-900">
                               <ChartRenderer config={chart} />
                             </div>
                           ))}
                       </div>
                     ) : (
                       <div className="space-y-2">
-                        <h2 className="text-base font-semibold text-zinc-200">{response.summary || 'Summary'}</h2>
-                        <p className="text-sm text-zinc-400">Expand research details below.</p>
+                        <h3 className="text-sm font-bold text-zinc-200">{response.summary || 'Summary'}</h3>
+                        <p className="text-xs text-zinc-500 italic">Toggle Expand below to view details and charts.</p>
                       </div>
                     );
                   })()}
                 </div>
 
-                {/* Metadata */}
-                <div className="flex items-center justify-between pt-4 border-t border-zinc-700/50">
-                  <div className="flex items-center gap-4 text-xs">
-                    <span className="text-zinc-400 font-medium">{response.sourcesCount} sources</span>
-                    <span className="text-zinc-400 font-medium">{response.citationsCount} citations</span>
-                    <span className="px-2 py-1 rounded-full bg-emerald-500/20 text-emerald-400 font-medium">
-                      {response.confidence} confident
-                    </span>
-                  </div>
-                  <Button
-                    variant="ghost"
+                {/* Expand / Collapse Footer */}
+                <div className="flex items-center justify-end pt-3 border-t border-zinc-900">
+                  <button
                     onClick={() => toggleExpand(response.id, response.expanded)}
-                    className="text-xs text-zinc-400 hover:bg-zinc-700"
+                    className="px-2.5 py-1 text-[10px] font-bold text-zinc-400 hover:text-white bg-zinc-800/40 hover:bg-zinc-800 rounded-lg transition-colors cursor-pointer"
                   >
                     {response.expanded ? 'Collapse' : 'Expand'}
-                  </Button>
+                  </button>
                 </div>
               </div>
             ) : (
-              <div className="ml-auto max-w-xl">
-                <div className="bg-emerald-500 text-white rounded-2xl p-4">
-                  <p className="text-sm">{response.content}</p>
-                </div>
+              <div className="ml-auto max-w-[85%] bg-zinc-800/60 border border-zinc-800 rounded-2xl p-4 shadow-sm hover:bg-zinc-800 transition-colors">
+                <p className="text-zinc-200 text-sm leading-relaxed">{response.content}</p>
               </div>
             )}
           </div>
         ))}
 
         {isResearching && (
-          <div className="bg-zinc-800 rounded-2xl p-6 border border-zinc-700/50 space-y-3">
-            <div className="flex items-center gap-2 text-sm font-medium text-white">
-              <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
+          <div className="bg-zinc-900/35 border border-zinc-900 rounded-2xl p-5 space-y-3.5">
+            <div className="flex items-center gap-2 text-xs font-semibold text-white uppercase tracking-wider">
+              <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping"></div>
               Research in progress...
             </div>
             <div className="space-y-2">
-              <div className="h-1.5 bg-zinc-700 rounded-full overflow-hidden">
+              <div className="h-1 bg-zinc-900 rounded-full overflow-hidden">
                 <div className="h-full bg-emerald-500 w-1/3 animate-pulse"></div>
               </div>
-              <div className="flex gap-2 text-xs text-zinc-400">
-                <span>Planning...</span>
+              <div className="flex gap-2 text-[10px] text-zinc-500 font-semibold uppercase tracking-wider">
+                <span>Planning</span>
                 <span>•</span>
-                <span>Searching web...</span>
+                <span>Searching Web</span>
                 <span>•</span>
-                <span>Reading sources...</span>
+                <span>Compiling Facts</span>
               </div>
             </div>
           </div>
@@ -635,8 +498,8 @@ export default function MainPanel({ researchId }: MainPanelProps) {
       </div>
 
       {/* Chat Composer */}
-      <div className="px-8 py-6 border-t border-zinc-800/50">
-        <div className="relative">
+      <div className="px-6 py-4 border-t border-zinc-900/50 bg-[#111113] shrink-0">
+        <div className="relative rounded-2xl border border-zinc-800 bg-zinc-900/30 focus-within:border-zinc-700/80 focus-within:ring-2 focus-within:ring-emerald-500/10 focus-within:bg-zinc-900/70 transition-all p-3.5 pb-14">
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -646,47 +509,49 @@ export default function MainPanel({ researchId }: MainPanelProps) {
                 handleSend()
               }
             }}
-            placeholder="What would you like to research?"
-            className="w-full p-4 pr-24 border border-zinc-700 rounded-2xl resize-none text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 bg-zinc-800"
-            rows={3}
+            placeholder="Ask a question or create something"
+            className="w-full bg-transparent resize-none text-sm text-zinc-150 placeholder-zinc-500 focus:outline-none scrollbar-none h-12"
           />
 
-          {/* Composer Actions */}
-          <div className="absolute right-4 bottom-4 flex items-center gap-2">
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-zinc-500 hover:text-zinc-300 hover:bg-transparent"
-            >
-              <Paperclip className="w-4 h-4" />
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-zinc-500 hover:text-zinc-300 hover:bg-transparent"
-              title="Deep Research"
-            >
-              <Zap className="w-4 h-4" />
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-zinc-500 hover:text-zinc-300 hover:bg-transparent"
-              title="Use Memory"
-            >
-              <Brain className="w-4 h-4" />
-            </Button>
-            <Button
-              size="sm"
-              onClick={handleSend}
-              disabled={!input.trim()}
-              className="bg-emerald-500 text-white hover:bg-emerald-600 disabled:opacity-50"
-            >
-              <Send className="w-4 h-4" />
-            </Button>
+          {/* Composer Action Toolbar */}
+          <div className="absolute left-3.5 right-3.5 bottom-3.5 flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <button
+                className="p-2 hover:bg-zinc-800/80 text-zinc-500 hover:text-white rounded-lg transition-colors cursor-pointer"
+                title="Attach sources"
+              >
+                <Paperclip className="w-4 h-4" />
+              </button>
+              <button
+                className="p-2 hover:bg-zinc-800/80 text-zinc-500 hover:text-white rounded-lg transition-colors cursor-pointer"
+                title="Deep Research"
+              >
+                <Zap className="w-4 h-4" />
+              </button>
+              <button
+                className="p-2 hover:bg-zinc-800/80 text-zinc-500 hover:text-white rounded-lg transition-colors cursor-pointer"
+                title="Use Memory"
+              >
+                <Brain className="w-4 h-4" />
+              </button>
+            </div>
+            
+            <div className="flex items-center gap-3">
+              <span className="text-[10px] text-zinc-500 font-semibold uppercase tracking-wider select-none">
+                {sourceCount} {sourceCount === 1 ? 'source' : 'sources'}
+              </span>
+              <button
+                onClick={handleSend}
+                disabled={!input.trim()}
+                className="p-2 rounded-full bg-white hover:bg-zinc-200 text-black disabled:bg-zinc-800 disabled:text-zinc-600 transition-all shadow-md cursor-pointer flex items-center justify-center shrink-0"
+              >
+                <ArrowUp className="w-4 h-4 font-bold" />
+              </button>
+            </div>
           </div>
         </div>
       </div>
+
       {/* Chat Tab Configuration Modal */}
       <ChatTabModal
         isOpen={isTabModalOpen}
@@ -701,6 +566,8 @@ export default function MainPanel({ researchId }: MainPanelProps) {
     </div>
   )
 }
+
+
 
 interface ClarificationFormProps {
   questions: Array<{ id: string; question: string; choices: string[] }>;

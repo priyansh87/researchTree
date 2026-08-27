@@ -1,10 +1,10 @@
-import { useState, useEffect, useMemo } from 'react'
+'use client'
+
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { Button } from '@/components/ui/button'
-import { ExternalLink, Plus, Trash2, Loader2, Network, List, Maximize2, Minimize2 } from 'lucide-react'
+import { ExternalLink, Plus, Trash2, Loader2, Network, List, Maximize2, Minimize2, ChevronLeft, Headphones, Play, Pause, RotateCcw, Volume2, Sparkles, HelpCircle, Layers, Table, BookOpen, Presentation, Video } from 'lucide-react'
 
 interface RightPanelProps {
-  activeTab: 'tree' | 'memory' | 'related' | 'sources'
-  onTabChange: (tab: 'tree' | 'memory' | 'related' | 'sources') => void
   researchId: string
   workspaceId: string
 }
@@ -17,6 +17,11 @@ interface GraphNode {
   y?: number;
   vx?: number;
   vy?: number;
+  summary?: string;
+  keywords?: string[];
+  updatedAt?: string;
+  sourcesCount?: number;
+  citationsCount?: number;
 }
 
 interface GraphLink {
@@ -109,7 +114,7 @@ function TopicGraph({ topics, researchTitle, width = 280 }: { topics: any[]; res
     nodeList.push({
       id: 'research-root',
       label: researchTitle || 'Research Hub',
-      type: 'workspace', // Large green circle
+      type: 'workspace',
       summary: 'Root node for this research project.',
       keywords: [],
       updatedAt: new Date().toISOString(),
@@ -122,7 +127,7 @@ function TopicGraph({ topics, researchTitle, width = 280 }: { topics: any[]; res
       nodeList.push({
         id: t.id,
         label: t.title,
-        type: 'research', // Medium indigo circle
+        type: 'research',
         summary: t.summary,
         keywords: t.keywords || [],
         updatedAt: t.updatedAt,
@@ -304,103 +309,35 @@ function TopicGraph({ topics, researchTitle, width = 280 }: { topics: any[]; res
               ))}
             </div>
           )}
-          {hoveredNode.type === 'research' && (
-            <div className="grid grid-cols-2 gap-x-4 pt-1 border-t border-zinc-800/80 text-[10px] text-zinc-500">
-              <span>Sources: <span className="text-zinc-300">{hoveredNode.sourcesCount}</span></span>
-              <span>Citations: <span className="text-zinc-300">{hoveredNode.citationsCount}</span></span>
-              <span className="col-span-2 mt-0.5">Updated: <span className="text-zinc-300">{new Date(hoveredNode.updatedAt || '').toLocaleDateString()}</span></span>
-            </div>
-          )}
-        </div>
-      )}
-
-      {!hoveredNode && (
-        <div className="absolute top-2 right-2 text-[9px] text-zinc-500 pointer-events-none">
-          Click nodes to jump & filter paths
         </div>
       )}
     </div>
   );
 }
 
-const treeData = {
-  'gaming-laptop': {
-    name: 'Gaming Laptop',
-    children: [
-      { name: 'RTX 4060', count: 3 },
-      { name: 'Battery', count: 2 },
-      { name: 'Display', count: 4 },
-      { name: 'Performance', count: 5 },
-    ],
-  },
-}
-
-const memoryData = [
-  'Preferred format: Detailed technical comparisons',
-  'Previous related: GPU Research, AI Chips',
-  'Important findings: RTX 4060 vs 4070 performance gap',
-  'Budget constraint: Under $2000',
-]
-
-const relatedResearch = [
-  { id: 1, title: 'GPU Research', icon: '📊', studies: 12 },
-  { id: 2, title: 'AI Chips', icon: '🤖', studies: 8 },
-  { id: 3, title: 'Display Technologies', icon: '🖥️', studies: 6 },
-  { id: 4, title: 'Battery Optimization', icon: '🔋', studies: 4 },
-]
-
-const sources = [
-  {
-    id: 1,
-    domain: 'nvidia.com',
-    title: 'NVIDIA RTX 4060 Specifications',
-    trust: 98,
-  },
-  {
-    id: 2,
-    domain: 'techpowerup.com',
-    title: 'GPU Database - Graphics Card Comparison',
-    trust: 95,
-  },
-  {
-    id: 3,
-    domain: 'tomshardware.com',
-    title: 'Best Gaming Laptops 2024',
-    trust: 92,
-  },
-  {
-    id: 4,
-    domain: 'notebookcheck.net',
-    title: 'Gaming Laptop Reviews',
-    trust: 90,
-  },
-  {
-    id: 5,
-    domain: 'gsmarena.com',
-    title: 'Laptop Specifications Database',
-    trust: 88,
-  },
-]
-
-export default function RightPanel({ activeTab, onTabChange, researchId, workspaceId }: RightPanelProps) {
-  const tree = treeData[researchId as keyof typeof treeData] || treeData['gaming-laptop']
-
+export default function RightPanel({ researchId, workspaceId }: RightPanelProps) {
   const [dbTopics, setDbTopics] = useState<any[]>([])
   const [researchTitle, setResearchTitle] = useState('')
-  const [memoryView, setMemoryView] = useState<'graph' | 'list'>('graph')
   const [isExpanded, setIsExpanded] = useState(false)
-  const [dbSources, setDbSources] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
 
-  const containerWidth = isExpanded ? 550 : 270;
+  // Studio Tools Navigation State
+  const [activeTool, setActiveTool] = useState<
+    null | 'audio' | 'slides' | 'graph' | 'flashcards' | 'quiz' | 'datatable'
+  >(null)
 
-  // Form states
-  const [newMemory, setNewMemory] = useState('')
-  const [showAddSource, setShowAddSource] = useState(false)
-  const [newSourceDomain, setNewSourceDomain] = useState('')
-  const [newSourceTitle, setNewSourceTitle] = useState('')
-  const [newSourceTrust, setNewSourceTrust] = useState(90)
-  const [newSourceUrl, setNewSourceUrl] = useState('')
+  // Audio summary states
+  const [isPlaying, setIsPlaying] = useState(false)
+  const [audioProgress, setAudioProgress] = useState(25)
+  const [audioVolume, setAudioVolume] = useState(80)
+
+  // Flashcards state
+  const [activeCardIdx, setActiveCardIdx] = useState(0)
+  const [isCardFlipped, setIsCardFlipped] = useState(false)
+
+  // Quiz state
+  const [quizAnswers, setQuizAnswers] = useState<Record<number, number>>({})
+  const [showQuizResults, setShowQuizResults] = useState(false)
 
   // Load data
   useEffect(() => {
@@ -409,21 +346,13 @@ export default function RightPanel({ activeTab, onTabChange, researchId, workspa
     async function loadData() {
       setLoading(true)
       try {
-        if (activeTab === 'memory') {
-          // Fetch research metadata for title
-          const metaRes = await fetch(`/api/research/${researchId}`)
-          const metaData = await metaRes.json()
-          if (metaRes.ok) setResearchTitle(metaData.research?.title || 'Research Hub')
+        const metaRes = await fetch(`/api/research/${researchId}`)
+        const metaData = await metaRes.json()
+        if (metaRes.ok) setResearchTitle(metaData.research?.title || 'Research Hub')
 
-          // Fetch topic graph nodes
-          const res = await fetch(`/api/research/${researchId}/topics`)
-          const data = await res.json()
-          if (res.ok) setDbTopics(data.topics || [])
-        } else if (activeTab === 'sources') {
-          const res = await fetch(`/api/research/${researchId}/sources`)
-          const data = await res.json()
-          if (res.ok) setDbSources(data.sources || [])
-        }
+        const res = await fetch(`/api/research/${researchId}/topics`)
+        const data = await res.json()
+        if (res.ok) setDbTopics(data.topics || [])
       } catch (err) {
         console.error('Error fetching right panel data:', err)
       } finally {
@@ -437,7 +366,6 @@ export default function RightPanel({ activeTab, onTabChange, researchId, workspa
       const eventDetail = (e as CustomEvent).detail
       if (eventDetail?.researchId === researchId) {
         setDbTopics([])
-        setDbSources([])
       }
     }
     window.addEventListener('research-cleared', handleResearchCleared)
@@ -445,351 +373,496 @@ export default function RightPanel({ activeTab, onTabChange, researchId, workspa
     return () => {
       window.removeEventListener('research-cleared', handleResearchCleared)
     }
-  }, [researchId, activeTab, workspaceId])
+  }, [researchId, workspaceId])
 
-  // CRUD Actions
-  const handleAddMemory = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!newMemory.trim() || !researchId) return
+  const containerWidth = isExpanded ? 550 : 270;
 
-    try {
-      const res = await fetch(`/api/research/${researchId}/memory`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: newMemory.trim() }),
-      })
-      const data = await res.json()
-      if (res.ok && data.memory) {
-        setDbMemories((prev) => [...prev, data.memory])
-        setNewMemory('')
-      }
-    } catch (err) {
-      console.error('Error adding memory:', err)
+  // Flashcards mock data
+  const mockFlashcards = [
+    { front: 'TLS 1.3 Ephemeral Key Exchange (ECDHE)', back: 'Generates a unique, dynamic cryptographic key for every session to guarantee forward secrecy if a master key is compromised later.' },
+    { front: 'Vapor Chamber Cooling', back: 'An advanced thermal solution that spreads heat uniformly over a flat surface, vaporizing and condensing liquid to cool high-performance chips.' },
+    { front: 'Battery Performance under Efficiency Mode', back: 'ASUS TUF averages 6-7 hours, Lenovo Legion achieves 7-8 hours, and MSI Raider offers only 3-4 hours due to GPU power demand.' },
+    { front: 'Key Exchange Step in Handshake', back: 'Both parties agree on algorithms and utilize pre-master secrets. In RSA, the client encrypts this with the server\'s public key.' }
+  ]
+
+  // Quiz mock data
+  const mockQuiz = [
+    {
+      q: 'Which laptop provides the best class-leading battery optimization under efficiency mode?',
+      options: ['ASUS TUF A16', 'Lenovo Legion 5 Pro', 'MSI Raider GE78 HX', 'Acer Nitro V'],
+      answer: 1 // Lenovo Legion
+    },
+    {
+      q: 'What standard protocol reduces round-trips for faster, more secure internet handshakes?',
+      options: ['TLS 1.2', 'SSL 3.0', 'TLS 1.3', 'HTTP/2'],
+      answer: 2 // TLS 1.3
+    },
+    {
+      q: 'What is the average safe temperature range for gaming laptops under loading conditions?',
+      options: ['45-55°C', '75-85°C', '95-105°C', '110-120°C'],
+      answer: 1 // 75-85°C
     }
-  }
+  ]
 
-  const handleDeleteMemory = async (id: string) => {
-    if (!researchId) return
-    try {
-      const res = await fetch(`/api/research/${researchId}/memory?id=${id}`, {
-        method: 'DELETE',
-      })
-      if (res.ok) {
-        setDbMemories((prev) => prev.filter((m) => m.id !== id))
-      }
-    } catch (err) {
-      console.error('Error deleting memory:', err)
+  // Audio timer ticker
+  useEffect(() => {
+    let interval: NodeJS.Timeout
+    if (isPlaying) {
+      interval = setInterval(() => {
+        setAudioProgress((prev) => (prev >= 100 ? 0 : prev + 0.5))
+      }, 500)
     }
-  }
-
-  const handleAddSource = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!newSourceDomain.trim() || !newSourceTitle.trim() || !researchId) return
-
-    try {
-      const res = await fetch(`/api/research/${researchId}/sources`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          domain: newSourceDomain.trim(),
-          title: newSourceTitle.trim(),
-          trust: Number(newSourceTrust),
-          url: newSourceUrl.trim() || null,
-        }),
-      })
-      const data = await res.json()
-      if (res.ok && data.source) {
-        setDbSources((prev) => [...prev, data.source])
-        setNewSourceDomain('')
-        setNewSourceTitle('')
-        setNewSourceTrust(90)
-        setNewSourceUrl('')
-        setShowAddSource(false)
-      }
-    } catch (err) {
-      console.error('Error adding source:', err)
-    }
-  }
+    return () => clearInterval(interval)
+  }, [isPlaying])
 
   return (
-    <div className={`border-l border-zinc-800/50 bg-zinc-900 flex flex-col h-screen transition-all duration-300 ${isExpanded ? 'w-[600px]' : 'w-80'}`}>
-      {/* Tabs */}
-      <div className="flex border-b border-zinc-800/50 items-center">
-        <button
-          onClick={() => onTabChange('tree')}
-          className={`flex-1 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-            activeTab === 'tree'
-              ? 'border-emerald-500 text-emerald-400'
-              : 'border-transparent text-zinc-500 hover:text-zinc-300'
-          }`}
-        >
-          Tree
-        </button>
-        <button
-          onClick={() => onTabChange('memory')}
-          className={`flex-1 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-            activeTab === 'memory'
-              ? 'border-emerald-500 text-emerald-400'
-              : 'border-transparent text-zinc-500 hover:text-zinc-300'
-          }`}
-        >
-          Graph
-        </button>
-        <button
-          onClick={() => onTabChange('related')}
-          className={`flex-1 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-            activeTab === 'related'
-              ? 'border-emerald-500 text-emerald-400'
-              : 'border-transparent text-zinc-500 hover:text-zinc-300'
-          }`}
-        >
-          Related
-        </button>
-        <button
-          onClick={() => onTabChange('sources')}
-          className={`flex-1 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-            activeTab === 'sources'
-              ? 'border-emerald-500 text-emerald-400'
-              : 'border-transparent text-zinc-500 hover:text-zinc-300'
-          }`}
-        >
-          Sources
-        </button>
+    <div className={`border-l border-zinc-900 bg-[#111113] rounded-2xl flex flex-col h-full shadow-2xl transition-all duration-300 shrink-0 select-none overflow-hidden ${isExpanded ? 'w-[600px]' : 'w-80'}`}>
+      {/* Header */}
+      <div className="flex border-b border-zinc-900/50 p-4 items-center justify-between bg-[#111113] shrink-0">
+        <div className="flex items-center gap-2">
+          {activeTool && (
+            <button 
+              onClick={() => {
+                setActiveTool(null)
+                setIsCardFlipped(false)
+              }}
+              className="p-1 hover:bg-zinc-800 text-zinc-400 hover:text-white rounded-lg transition-colors cursor-pointer mr-1"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+          )}
+          <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+            {activeTool ? activeTool.toUpperCase() : 'Studio'}
+          </h3>
+        </div>
         <button
           onClick={() => setIsExpanded(!isExpanded)}
-          className="px-3 py-3 border-b-2 border-transparent text-zinc-500 hover:text-white transition-colors ml-auto cursor-pointer"
+          className="p-1.5 hover:bg-zinc-800 text-zinc-400 hover:text-white rounded-lg transition-colors cursor-pointer"
           title={isExpanded ? "Collapse panel" : "Expand panel"}
         >
           {isExpanded ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
         </button>
       </div>
 
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto">
+      {/* Main Panel Content */}
+      <div className="flex-1 overflow-y-auto scrollbar-thin">
         {loading && (
-          <div className="flex justify-center items-center py-10">
+          <div className="flex justify-center items-center py-12">
             <Loader2 className="w-6 h-6 text-emerald-500 animate-spin" />
           </div>
         )}
 
-        {!loading && activeTab === 'tree' && (
-          <div className="p-6 space-y-4">
-            <div>
-              <h3 className="font-semibold text-white mb-4">{tree.name}</h3>
-              <div className="space-y-2">
-                {tree.children.map((child, idx) => (
-                  <button
-                    key={idx}
-                    className="w-full text-left px-3 py-2 rounded-lg hover:bg-zinc-800 transition-colors group"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-zinc-300 group-hover:text-white">├ {child.name}</span>
-                      <span className="text-xs text-zinc-500">{child.count}</span>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {!loading && activeTab === 'memory' && (
-          <div className="p-6 space-y-4">
-            {/* View Selector Header */}
-            <div className="flex items-center justify-between">
-              <h4 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">
-                {memoryView === 'graph' ? 'Semantic Graph' : 'Topic List'}
-              </h4>
-              <div className="flex bg-zinc-800 p-0.5 rounded-lg border border-zinc-700/50">
-                <button
-                  onClick={() => setMemoryView('graph')}
-                  className={`p-1.5 rounded-md transition-colors ${
-                    memoryView === 'graph'
-                      ? 'bg-zinc-700 text-emerald-400'
-                      : 'text-zinc-400 hover:text-white'
-                  }`}
-                  title="Graph View"
-                >
-                  <Network className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  onClick={() => setMemoryView('list')}
-                  className={`p-1.5 rounded-md transition-colors ${
-                    memoryView === 'list'
-                      ? 'bg-zinc-700 text-emerald-400'
-                      : 'text-zinc-400 hover:text-white'
-                  }`}
-                  title="List View"
-                >
-                  <List className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </div>
-
-            {memoryView === 'graph' ? (
-              <div className="space-y-4">
-                <TopicGraph topics={dbTopics} researchTitle={researchTitle} width={containerWidth} />
-                {dbTopics.length === 0 && (
-                  <p className="text-xs text-zinc-500 italic text-center py-4">No research topics to visualize yet.</p>
-                )}
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <div className="space-y-3">
-                  {dbTopics.map((item) => (
-                    <div
-                      key={item.id}
-                      className="p-3 bg-zinc-800 rounded-lg border border-zinc-700/50 hover:border-zinc-700 transition-colors group flex flex-col gap-1.5"
-                    >
-                      <div className="flex items-center justify-between">
-                        <strong className="text-sm text-white">{item.title}</strong>
-                        {item.parentId && (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-700 text-zinc-400">
-                            Sub-topic
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-xs text-zinc-300 leading-relaxed">{item.summary}</p>
-                      {item.keywords && item.keywords.length > 0 && (
-                        <div className="flex flex-wrap gap-1 pt-1">
-                          {item.keywords.map((kw: string, idx: number) => (
-                            <span key={idx} className="text-[10px] text-emerald-400">
-                              #{kw}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                  {dbTopics.length === 0 && (
-                    <p className="text-xs text-zinc-500 italic text-center py-4">No topics recorded yet.</p>
-                  )}
+        {!loading && !activeTool && (
+          <div className="p-4 space-y-4">
+            {/* Audio Overview Banner card */}
+            <div className="p-4 bg-gradient-to-br from-indigo-950/60 to-purple-950/30 border border-indigo-900/50 rounded-2xl flex flex-col gap-3 relative shadow-md hover:border-indigo-700/50 transition-all group">
+              <div className="flex items-start gap-3">
+                <div className="p-2.5 bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 rounded-xl shrink-0">
+                  <Headphones className="w-5 h-5 animate-pulse" />
+                </div>
+                <div className="space-y-0.5">
+                  <h4 className="text-xs font-bold text-white tracking-wide uppercase">Create Audio Overview</h4>
+                  <p className="text-[10px] text-zinc-400 leading-relaxed">
+                    Generate structured audio guides in Hindi, English, Bengali, Tamil, Telugu, and more.
+                  </p>
                 </div>
               </div>
-            )}
-          </div>
-        )}
-
-        {!loading && activeTab === 'related' && (
-          <div className="p-6 space-y-3">
-            {relatedResearch.map((research) => (
               <button
-                key={research.id}
-                className="w-full text-left p-4 bg-zinc-800 rounded-xl border border-zinc-700/50 hover:border-zinc-700 hover:bg-zinc-700/50 transition-colors group"
+                onClick={() => setActiveTool('audio')}
+                className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-[11px] font-bold transition-all cursor-pointer shadow-md shadow-indigo-600/10"
               >
-                <div className="flex items-start gap-3">
-                  <span className="text-2xl">{research.icon}</span>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-white group-hover:text-white">{research.title}</p>
-                    <p className="text-xs text-zinc-400 mt-1">{research.studies} studies</p>
-                  </div>
+                Listen Now
+              </button>
+            </div>
+
+            {/* Studio Tools Grid */}
+            <div className="grid grid-cols-1 gap-2.5">
+              {/* Mind Map */}
+              <button
+                onClick={() => setActiveTool('graph')}
+                className="flex items-center gap-3 p-3.5 bg-zinc-900/35 hover:bg-zinc-900/80 border border-zinc-900 hover:border-zinc-800 rounded-xl transition-all cursor-pointer group text-left"
+              >
+                <div className="p-2 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-lg shrink-0">
+                  <Network className="w-4 h-4" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-bold text-zinc-200 group-hover:text-white">Mind Map</p>
+                  <p className="text-[10px] text-zinc-500 mt-0.5 truncate">Interactive force semantic graph</p>
                 </div>
               </button>
-            ))}
+
+              {/* Quiz */}
+              <button
+                onClick={() => setActiveTool('quiz')}
+                className="flex items-center gap-3 p-3.5 bg-zinc-900/35 hover:bg-zinc-900/80 border border-zinc-900 hover:border-zinc-800 rounded-xl transition-all cursor-pointer group text-left"
+              >
+                <div className="p-2 bg-violet-500/10 border border-violet-500/20 text-violet-400 rounded-lg shrink-0">
+                  <HelpCircle className="w-4 h-4" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-bold text-zinc-200 group-hover:text-white">Interactive Quiz</p>
+                  <p className="text-[10px] text-zinc-500 mt-0.5 truncate">Test your research retention</p>
+                </div>
+              </button>
+
+              {/* Flashcards */}
+              <button
+                onClick={() => setActiveTool('flashcards')}
+                className="flex items-center gap-3 p-3.5 bg-zinc-900/35 hover:bg-zinc-900/80 border border-zinc-900 hover:border-zinc-800 rounded-xl transition-all cursor-pointer group text-left"
+              >
+                <div className="p-2 bg-blue-500/10 border border-blue-500/20 text-blue-400 rounded-lg shrink-0">
+                  <Layers className="w-4 h-4" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-bold text-zinc-200 group-hover:text-white">Flashcards</p>
+                  <p className="text-[10px] text-zinc-500 mt-0.5 truncate">Review key definitions</p>
+                </div>
+              </button>
+
+              {/* Data Table */}
+              <button
+                onClick={() => setActiveTool('datatable')}
+                className="flex items-center gap-3 p-3.5 bg-zinc-900/35 hover:bg-zinc-900/80 border border-zinc-900 hover:border-zinc-800 rounded-xl transition-all cursor-pointer group text-left"
+              >
+                <div className="p-2 bg-amber-500/10 border border-amber-500/20 text-amber-400 rounded-lg shrink-0">
+                  <Table className="w-4 h-4" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-bold text-zinc-200 group-hover:text-white">Data Table</p>
+                  <p className="text-[10px] text-zinc-500 mt-0.5 truncate">Tabulate structural research metrics</p>
+                </div>
+              </button>
+
+              {/* Slide Deck */}
+              <button
+                onClick={() => setActiveTool('slides')}
+                className="flex items-center gap-3 p-3.5 bg-zinc-900/35 hover:bg-zinc-900/80 border border-zinc-900 hover:border-zinc-800 rounded-xl transition-all cursor-pointer group text-left"
+              >
+                <div className="p-2 bg-pink-500/10 border border-pink-500/20 text-pink-400 rounded-lg shrink-0">
+                  <Presentation className="w-4 h-4" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <p className="text-xs font-bold text-zinc-200 group-hover:text-white">Slide Deck</p>
+                    <span className="px-1.5 py-0.2 bg-zinc-800 text-[8px] font-bold text-zinc-400 rounded uppercase">Beta</span>
+                  </div>
+                  <p className="text-[10px] text-zinc-500 mt-0.5 truncate">Visual briefing presentations</p>
+                </div>
+              </button>
+
+              {/* Video Overview */}
+              <button
+                onClick={() => alert('Video Overview generated. Output will be saved under Workspace folders.')}
+                className="flex items-center gap-3 p-3.5 bg-zinc-900/35 hover:bg-zinc-900/80 border border-zinc-900 hover:border-zinc-800 rounded-xl transition-all cursor-pointer group text-left"
+              >
+                <div className="p-2 bg-orange-500/10 border border-orange-500/20 text-orange-400 rounded-lg shrink-0">
+                  <Video className="w-4 h-4" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-bold text-zinc-200 group-hover:text-white">Video Overview</p>
+                  <p className="text-[10px] text-zinc-500 mt-0.5 truncate">Create short simulated recap clip</p>
+                </div>
+              </button>
+            </div>
           </div>
         )}
 
-        {!loading && activeTab === 'sources' && (
-          <div className="p-6 space-y-4">
-            {/* Add Source button and form */}
-            {!showAddSource ? (
-              <Button
-                onClick={() => setShowAddSource(true)}
-                variant="outline"
-                className="w-full border-zinc-700 text-zinc-300 hover:bg-zinc-800 text-xs flex items-center gap-1 py-1.5"
-              >
-                <Plus className="w-3.5 h-3.5" /> Add Research Source
-              </Button>
-            ) : (
-              <form onSubmit={handleAddSource} className="bg-zinc-850 p-3 rounded-lg border border-zinc-700 space-y-3">
-                <input
-                  type="text"
-                  required
-                  value={newSourceTitle}
-                  onChange={(e) => setNewSourceTitle(e.target.value)}
-                  placeholder="Source Title"
-                  className="w-full px-2.5 py-1.5 bg-zinc-800 border border-zinc-700 rounded text-xs text-white placeholder-zinc-500"
-                />
-                <input
-                  type="text"
-                  required
-                  value={newSourceDomain}
-                  onChange={(e) => setNewSourceDomain(e.target.value)}
-                  placeholder="Domain (e.g. nvidia.com)"
-                  className="w-full px-2.5 py-1.5 bg-zinc-800 border border-zinc-700 rounded text-xs text-white placeholder-zinc-500"
-                />
-                <input
-                  type="number"
-                  min="0"
-                  max="100"
-                  value={newSourceTrust}
-                  onChange={(e) => setNewSourceTrust(Number(e.target.value))}
-                  placeholder="Trust rating (0-100)"
-                  className="w-full px-2.5 py-1.5 bg-zinc-800 border border-zinc-700 rounded text-xs text-white placeholder-zinc-500"
-                />
-                <input
-                  type="url"
-                  value={newSourceUrl}
-                  onChange={(e) => setNewSourceUrl(e.target.value)}
-                  placeholder="URL (optional)"
-                  className="w-full px-2.5 py-1.5 bg-zinc-800 border border-zinc-700 rounded text-xs text-white placeholder-zinc-500"
-                />
-                <div className="flex gap-2 text-xs">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={() => setShowAddSource(false)}
-                    className="flex-1 py-1 h-auto text-zinc-400"
-                  >
-                    Cancel
-                  </Button>
-                  <Button type="submit" className="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white py-1 h-auto">
-                    Save Source
-                  </Button>
-                </div>
-              </form>
-            )}
+        {/* 1. Audio Overview Tool */}
+        {!loading && activeTool === 'audio' && (
+          <div className="p-5 space-y-6">
+            <div className="text-center space-y-2">
+              <div className="w-16 h-16 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 flex items-center justify-center mx-auto shadow-md">
+                <Headphones className="w-8 h-8" />
+              </div>
+              <h4 className="text-xs font-bold text-white tracking-wide uppercase">Audio Overview Player</h4>
+              <p className="text-[10px] text-zinc-500 leading-snug">
+                Podcast summary compiling top findings from your PDF & Web sources.
+              </p>
+            </div>
 
-            <div className="space-y-3">
-              {dbSources.map((source) => (
-                <div
-                  key={source.id}
-                  className="p-4 bg-zinc-800 rounded-xl border border-zinc-700/50 hover:border-zinc-700 hover:bg-zinc-700/50 transition-colors group"
+            {/* Player controller box */}
+            <div className="p-5 bg-zinc-900/50 border border-zinc-850 rounded-2xl space-y-4 shadow-inner">
+              <div className="flex justify-between items-center text-[10px] text-zinc-500 font-semibold tracking-wider uppercase">
+                <span>Podcast Episode 1</span>
+                <span className="text-emerald-400">HQ Streaming</span>
+              </div>
+              
+              {/* Progress bar */}
+              <div className="space-y-1.5">
+                <div className="h-1 bg-zinc-800 rounded-full relative overflow-hidden cursor-pointer">
+                  <div 
+                    className="h-full bg-indigo-500" 
+                    style={{ width: `${audioProgress}%` }}
+                  ></div>
+                </div>
+                <div className="flex justify-between text-[9px] text-zinc-500 font-semibold font-mono">
+                  <span>01:14</span>
+                  <span>04:30</span>
+                </div>
+              </div>
+
+              {/* Controls */}
+              <div className="flex items-center justify-center gap-6 py-2">
+                <button 
+                  onClick={() => setAudioProgress(25)}
+                  className="p-2 hover:bg-zinc-800 text-zinc-500 hover:text-white rounded-lg transition-colors cursor-pointer"
+                  title="Rewind"
                 >
-                  <div className="flex items-start justify-between gap-2 mb-2">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium text-zinc-500 uppercase tracking-wide">{source.domain}</p>
-                      <p className="text-sm text-zinc-300 mt-1 leading-snug">{source.title}</p>
-                    </div>
-                    {source.url && (
-                      <a
-                        href={source.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-zinc-500 hover:text-zinc-300 p-1 opacity-0 group-hover:opacity-100 transition-opacity"
-                      >
-                        <ExternalLink className="w-4 h-4" />
-                      </a>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <span className="text-xs text-zinc-500">Trust:</span>
-                    <div className="h-1.5 w-16 bg-zinc-700 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-emerald-500 rounded-full"
-                        style={{ width: `${source.trust}%` }}
-                      ></div>
-                    </div>
-                    <span className="text-xs font-medium text-zinc-400">{source.trust}%</span>
+                  <RotateCcw className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => setIsPlaying(!isPlaying)}
+                  className="w-10 h-10 rounded-full bg-white text-black hover:bg-zinc-200 flex items-center justify-center shadow-lg transition-transform hover:scale-105 cursor-pointer shrink-0"
+                >
+                  {isPlaying ? <Pause className="w-4 h-4 fill-black" /> : <Play className="w-4 h-4 fill-black ml-0.5" />}
+                </button>
+                <div className="flex items-center gap-1.5 text-zinc-500">
+                  <Volume2 className="w-4 h-4" />
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={audioVolume}
+                    onChange={(e) => setAudioVolume(Number(e.target.value))}
+                    className="w-12 h-1 accent-indigo-500 bg-zinc-800 rounded-full appearance-none cursor-pointer"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 2. Mind Map / Topic Graph Tool */}
+        {!loading && activeTool === 'graph' && (
+          <div className="p-5 space-y-4">
+            <h4 className="text-xs font-bold text-white tracking-wide uppercase mb-2">Topic Knowledge Graph</h4>
+            <TopicGraph topics={dbTopics} researchTitle={researchTitle} width={containerWidth} />
+            {dbTopics.length === 0 && (
+              <p className="text-xs text-zinc-500 italic text-center py-4">No topics mapped out yet.</p>
+            )}
+          </div>
+        )}
+
+        {/* 3. Interactive Quiz Tool */}
+        {!loading && activeTool === 'quiz' && (
+          <div className="p-5 space-y-5">
+            <div className="flex items-center gap-2 border-b border-zinc-900 pb-3">
+              <Sparkles className="w-4 h-4 text-violet-400" />
+              <p className="text-xs font-bold text-white uppercase tracking-wider">Generated Quiz Challenge</p>
+            </div>
+
+            <div className="space-y-5">
+              {mockQuiz.map((q, qIdx) => (
+                <div key={qIdx} className="space-y-2.5">
+                  <p className="text-xs font-bold text-zinc-200">
+                    {qIdx + 1}. {q.q}
+                  </p>
+                  <div className="grid grid-cols-1 gap-1.5 pl-2">
+                    {q.options.map((opt, optIdx) => {
+                      const isSelected = quizAnswers[qIdx] === optIdx
+                      const isCorrect = q.answer === optIdx
+                      
+                      let btnStyle = "border-zinc-800 bg-zinc-900/30 text-zinc-400 hover:border-zinc-700 hover:text-zinc-200"
+                      if (isSelected) {
+                        if (showQuizResults) {
+                          btnStyle = isCorrect 
+                            ? "bg-emerald-500/10 border-emerald-500/40 text-emerald-400" 
+                            : "bg-red-500/10 border-red-500/40 text-red-400"
+                        } else {
+                          btnStyle = "bg-violet-500/10 border-violet-500/40 text-violet-400"
+                        }
+                      } else if (showQuizResults && isCorrect) {
+                        btnStyle = "bg-emerald-500/5 border-emerald-500/20 text-emerald-500"
+                      }
+
+                      return (
+                        <button
+                          key={optIdx}
+                          disabled={showQuizResults}
+                          onClick={() => setQuizAnswers(prev => ({ ...prev, [qIdx]: optIdx }))}
+                          className={`w-full text-left px-3 py-2 border rounded-xl text-xs font-semibold transition-all cursor-pointer ${btnStyle}`}
+                        >
+                          {opt}
+                        </button>
+                      )
+                    })}
                   </div>
                 </div>
               ))}
-              {dbSources.length === 0 && (
-                <p className="text-xs text-zinc-500 italic text-center py-4">No sources recorded yet.</p>
+            </div>
+
+            <div className="pt-3 border-t border-zinc-900 flex gap-2">
+              {!showQuizResults ? (
+                <Button
+                  onClick={() => setShowQuizResults(true)}
+                  disabled={Object.keys(quizAnswers).length < mockQuiz.length}
+                  className="w-full bg-violet-500 hover:bg-violet-600 disabled:opacity-50 text-white font-bold text-xs py-2 rounded-xl cursor-pointer"
+                >
+                  Submit Answers
+                </Button>
+              ) : (
+                <Button
+                  onClick={() => {
+                    setQuizAnswers({})
+                    setShowQuizResults(false)
+                  }}
+                  className="w-full bg-zinc-800 hover:bg-zinc-750 text-white font-bold text-xs py-2 rounded-xl cursor-pointer"
+                >
+                  Reset Quiz
+                </Button>
               )}
             </div>
           </div>
         )}
+
+        {/* 4. Flashcards Tool */}
+        {!loading && activeTool === 'flashcards' && (
+          <div className="p-5 space-y-6">
+            <div className="flex justify-between items-center text-xs font-bold text-zinc-500 uppercase tracking-wider border-b border-zinc-900 pb-3">
+              <span>Dynamic Flashcard Deck</span>
+              <span className="text-zinc-400">{activeCardIdx + 1} / {mockFlashcards.length}</span>
+            </div>
+
+            {/* Flashcard container with flip animation */}
+            <div 
+              onClick={() => setIsCardFlipped(!isCardFlipped)}
+              className="w-full h-44 cursor-pointer relative group perspective-1000"
+            >
+              <div className={`w-full h-full duration-500 transform-style-3d relative ${isCardFlipped ? 'rotate-y-180' : ''}`}>
+                {/* Front Side */}
+                <div className="absolute inset-0 bg-zinc-900/60 hover:bg-zinc-900 border border-zinc-800 rounded-2xl p-5 flex flex-col items-center justify-center text-center backface-hidden shadow-md">
+                  <span className="text-[10px] text-zinc-500 font-bold tracking-wider uppercase mb-3">Front</span>
+                  <p className="text-xs font-bold text-zinc-100 px-3">
+                    {mockFlashcards[activeCardIdx].front}
+                  </p>
+                  <span className="text-[9px] text-zinc-500 font-semibold italic mt-4 uppercase">Click to flip card</span>
+                </div>
+
+                {/* Back Side */}
+                <div className="absolute inset-0 bg-zinc-900/90 border border-zinc-800 rounded-2xl p-5 flex flex-col items-center justify-center text-center backface-hidden rotate-y-180 shadow-md">
+                  <span className="text-[10px] text-emerald-500 font-bold tracking-wider uppercase mb-3">Answer</span>
+                  <p className="text-[11px] font-semibold text-zinc-200 px-2 leading-relaxed">
+                    {mockFlashcards[activeCardIdx].back}
+                  </p>
+                  <span className="text-[9px] text-zinc-500 font-semibold italic mt-4 uppercase">Click to flip back</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Flashcard pagination actions */}
+            <div className="flex items-center justify-between gap-3 pt-3">
+              <Button
+                variant="outline"
+                disabled={activeCardIdx === 0}
+                onClick={() => {
+                  setActiveCardIdx(prev => prev - 1)
+                  setIsCardFlipped(false)
+                }}
+                className="flex-1 py-1.5 h-auto text-xs font-bold border-zinc-800 hover:bg-zinc-800 disabled:opacity-30 rounded-xl"
+              >
+                Previous Card
+              </Button>
+              <Button
+                variant="outline"
+                disabled={activeCardIdx === mockFlashcards.length - 1}
+                onClick={() => {
+                  setActiveCardIdx(prev => prev + 1)
+                  setIsCardFlipped(false)
+                }}
+                className="flex-1 py-1.5 h-auto text-xs font-bold border-zinc-800 hover:bg-zinc-800 disabled:opacity-30 rounded-xl"
+              >
+                Next Card
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* 5. Data Table Tool */}
+        {!loading && activeTool === 'datatable' && (
+          <div className="p-4 space-y-4">
+            <h4 className="text-xs font-bold text-white tracking-wide uppercase border-b border-zinc-900 pb-2">Laptop Specifications</h4>
+            <div className="overflow-x-auto rounded-xl border border-zinc-850">
+              <table className="w-full text-[11px] text-zinc-300 bg-zinc-900/10">
+                <thead>
+                  <tr className="bg-zinc-900/60 border-b border-zinc-850 text-white font-bold">
+                    <th className="px-3 py-2 text-left">Specs</th>
+                    <th className="px-2 py-2">ASUS TUF</th>
+                    <th className="px-2 py-2">Lenovo</th>
+                    <th className="px-2 py-2">MSI Raider</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-850">
+                  <tr>
+                    <td className="px-3 py-2 font-semibold text-zinc-400 bg-zinc-900/10">GPU</td>
+                    <td className="px-2 py-2 text-center">RTX 4060</td>
+                    <td className="px-2 py-2 text-center">RTX 4060</td>
+                    <td className="px-2 py-2 text-center">RTX 4090</td>
+                  </tr>
+                  <tr>
+                    <td className="px-3 py-2 font-semibold text-zinc-400 bg-zinc-900/10">CPU</td>
+                    <td className="px-2 py-2 text-center">Ryzen 9</td>
+                    <td className="px-2 py-2 text-center">Ryzen 7</td>
+                    <td className="px-2 py-2 text-center">Core i9</td>
+                  </tr>
+                  <tr>
+                    <td className="px-3 py-2 font-semibold text-zinc-400 bg-zinc-900/10">Battery</td>
+                    <td className="px-2 py-2 text-center">6-7 hrs</td>
+                    <td className="px-2 py-2 text-center">7-8 hrs</td>
+                    <td className="px-2 py-2 text-center">3-4 hrs</td>
+                  </tr>
+                  <tr>
+                    <td className="px-3 py-2 font-semibold text-zinc-400 bg-zinc-900/10">Price</td>
+                    <td className="px-2 py-2 text-center">$1499</td>
+                    <td className="px-2 py-2 text-center">$999</td>
+                    <td className="px-2 py-2 text-center">$2499</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* 6. Slides Briefing Tool */}
+        {!loading && activeTool === 'slides' && (
+          <div className="p-5 space-y-5">
+            <h4 className="text-xs font-bold text-white tracking-wide uppercase border-b border-zinc-900 pb-2">Briefing Slides</h4>
+            
+            {/* Simple slide viewer */}
+            <div className="aspect-video bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex flex-col justify-between shadow-inner">
+              <div>
+                <span className="text-[8px] px-1.5 py-0.5 bg-zinc-800 text-zinc-400 font-bold rounded uppercase">Slide 1 of 2</span>
+                <h5 className="text-xs font-bold text-white mt-2 border-b border-zinc-800 pb-1.5">Executive Summary</h5>
+                <ul className="list-disc pl-3.5 space-y-1 mt-2 text-[10px] text-zinc-350">
+                  <li>Comparison of RTX 40-series laptops for budget and heavy workloads.</li>
+                  <li>Lenovo Legion offers top-tier value at $999.</li>
+                  <li>TLS 1.3 implementation reduces handshake round-trips.</li>
+                </ul>
+              </div>
+              <div className="text-[8px] text-zinc-500 text-right font-medium">Research Tree briefings</div>
+            </div>
+            
+            <Button
+              onClick={() => alert('Slide deck generated. Output saved to Workspace folders.')}
+              className="w-full bg-emerald-500 hover:bg-emerald-600 text-black font-bold text-xs py-2 rounded-xl cursor-pointer"
+            >
+              Export Slide Presentation
+            </Button>
+          </div>
+        )}
+      </div>
+
+      {/* Bottom Note section */}
+      <div className="border-t border-zinc-900 p-4 bg-[#111113]/85 backdrop-blur-md relative shrink-0">
+        <p className="text-[10px] text-zinc-500 leading-normal mb-3 pr-20 select-none">
+          Studio output will be saved here. After adding sources, click to generate Audio Overview, quizzes, data tables, and study guides!
+        </p>
+        <button
+          onClick={() => alert('Feature incoming: Add notes directly to your personal research log.')}
+          className="absolute right-4 bottom-4 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 hover:text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer shadow-md"
+        >
+          <BookOpen className="w-3.5 h-3.5" />
+          Add note
+        </button>
       </div>
     </div>
   )

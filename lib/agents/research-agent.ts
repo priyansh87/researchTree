@@ -19,8 +19,12 @@ async function callGroq(
     throw new Error('GROQ_API_KEY environment variable is not defined.');
   }
 
+  const configuredModel = process.env.CHAT_MODEL || process.env.NEXT_PUBLIC_CHAT_MODEL;
+
   // Define models list to cycle through in case of rate limits (429)
-  const models = ['llama-3.3-70b-versatile', 'mixtral-8x7b-32768', 'llama-3.1-8b-instant'];
+  const models = configuredModel 
+    ? [configuredModel] 
+    : ['llama-3.3-70b-versatile', 'mixtral-8x7b-32768', 'llama-3.1-8b-instant'];
   const currentModel = models[modelIndex] || models[0];
 
   try {
@@ -38,29 +42,31 @@ async function callGroq(
       }),
     });
 
+
     if (response.status === 429 && retries > 0) {
-      console.warn(`Groq rate limit (429) encountered. Retrying in ${delayMs}ms with model failover...`);
+      console.warn(`LLM rate limit (429) encountered. Retrying in ${delayMs}ms with model failover...`);
       await new Promise((resolve) => setTimeout(resolve, delayMs));
       return callGroq(messages, jsonMode, retries - 1, delayMs * 2, (modelIndex + 1) % models.length);
     }
 
     if (!response.ok) {
       const errText = await response.text();
-      console.error('Groq API Error:', errText);
-      throw new Error(`Groq API returned error status: ${response.status}`);
+      console.error('LLM API Error:', errText);
+      throw new Error(`LLM API returned error status: ${response.status}`);
     }
 
     const data = await response.json();
     return data.choices[0]?.message?.content || '';
   } catch (err) {
     if (retries > 0) {
-      console.warn(`Groq connection error. Retrying in ${delayMs}ms...`, err);
+      console.warn(`LLM connection error. Retrying in ${delayMs}ms...`, err);
       await new Promise((resolve) => setTimeout(resolve, delayMs));
       return callGroq(messages, jsonMode, retries - 1, delayMs * 2, (modelIndex + 1) % models.length);
     }
     throw err;
   }
 }
+
 
 // Call Tavily Search API
 async function callTavily(query: string): Promise<any[]> {
