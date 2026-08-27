@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, boolean, integer, jsonb } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, boolean, integer, jsonb, customType } from 'drizzle-orm/pg-core';
 
 // Mirroring the default Better Auth 'user' table handled by Neon Auth
 export const users = pgTable('user', {
@@ -10,6 +10,7 @@ export const users = pgTable('user', {
   createdAt: timestamp('createdAt').notNull().defaultNow(),
   updatedAt: timestamp('updatedAt').notNull().defaultNow(),
 });
+
 
 export const workspaces = pgTable('workspaces', {
   id: text('id').primaryKey(),
@@ -109,3 +110,28 @@ export const researchTopics = pgTable('research_topics', {
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });
+
+export const pgVector = customType<{ data: number[] }>({
+  dataType() {
+    return 'vector(384)';
+  },
+  toDriver(value: number[]): string {
+    return JSON.stringify(value);
+  },
+  fromDriver(value: unknown): number[] {
+    if (typeof value === 'string') {
+      return value.slice(1, -1).split(',').map(Number);
+    }
+    return value as number[];
+  }
+});
+
+export const pdfChunks = pgTable('pdf_chunks', {
+  id: text('id').primaryKey(),
+  researchId: text('research_id').notNull().references(() => researchItems.id, { onDelete: 'cascade' }),
+  content: text('content').notNull(),
+  embedding: pgVector('embedding'),
+  pageNumber: integer('page_number'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+

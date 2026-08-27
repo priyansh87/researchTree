@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
-import { Share2, Download, Zap, Brain, Send, Paperclip, ToggleRight, Loader2, Trash2, X, Plus, Settings, SlidersHorizontal, MoreVertical, ThumbsUp, ThumbsDown, ArrowUp } from 'lucide-react'
+import { Share2, Download, Zap, Brain, Send, Paperclip, ToggleRight, Loader2, Trash2, X, Plus, Settings, SlidersHorizontal, MoreVertical, ThumbsUp, ThumbsDown, ArrowUp, ChevronDown, Check } from 'lucide-react'
 import MarkdownRenderer from '@/components/markdown-renderer'
 import ChartRenderer from '@/components/chart-renderer'
 import ChatTabModal from './chat-tab-modal'
@@ -14,7 +14,35 @@ interface MainPanelProps {
 export default function MainPanel({ researchId }: MainPanelProps) {
   const [input, setInput] = useState('')
   const [isResearching, setIsResearching] = useState(false)
+  const [isUploading, setIsUploading] = useState(false)
   const [responses, setResponses] = useState<any[]>([])
+  const [selectedModel, setSelectedModel] = useState('openai/gpt-oss-120b')
+  const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false)
+
+  const modelsByProvider = {
+    "Groq": [
+      "groq/compound",
+      "groq/compound-mini"
+    ],
+    "Meta": [
+      "meta-llama/llama-prompt-guard-2-2b",
+      "meta-llama/llama-prompt-guard-2-8b"
+    ],
+    "OpenAI": [
+      "openai/gpt-oss-120b",
+      "openai/gpt-oss-20b",
+      "openai/gpt-oss-safeguard-20b",
+      "whisper-large-v3",
+      "whisper-large-v3-turbo"
+    ]
+  };
+
+  const formatModelName = (name: string) => {
+    if (name.length > 25) {
+      return name.substring(0, 22) + '...';
+    }
+    return name;
+  };
   
   const [chatTabs, setChatTabs] = useState<any[]>([])
   const [activeTabId, setActiveTabId] = useState<string>('main')
@@ -25,6 +53,44 @@ export default function MainPanel({ researchId }: MainPanelProps) {
   const [sourceCount, setSourceCount] = useState(0)
   
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    
+    const file = files[0];
+    if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+      alert('Only PDF documents are supported for upload and RAG indexing.');
+      return;
+    }
+
+    setIsUploading(true);
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const res = await fetch(`/api/research/${researchId}/sources/upload`, {
+        method: 'POST',
+        body: formData,
+      });
+      
+      const data = await res.json();
+      if (res.ok) {
+        alert(`Document "${file.name}" uploaded, parsed, and embedded successfully!`);
+        // Notify both Left Pane and Composer to update sources reactively
+        window.dispatchEvent(new CustomEvent('sources-updated'));
+      } else {
+        alert(data.error || 'Failed to upload and parse PDF.');
+      }
+    } catch (err) {
+      console.error('Error uploading PDF:', err);
+      alert('An error occurred while uploading and parsing the PDF.');
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -33,6 +99,7 @@ export default function MainPanel({ researchId }: MainPanelProps) {
   useEffect(() => {
     scrollToBottom()
   }, [responses, isResearching])
+
   
   const [meta, setMeta] = useState<any>({
     title: 'Loading Research...',
@@ -195,6 +262,7 @@ export default function MainPanel({ researchId }: MainPanelProps) {
           type: 'user',
           content: userPrompt,
           chatTabId: activeTabId,
+          model: selectedModel,
         }),
       })
       const userData = await userRes.json()
@@ -222,6 +290,7 @@ export default function MainPanel({ researchId }: MainPanelProps) {
           content: 'Choices submitted for research parameters.',
           choices: choices,
           chatTabId: activeTabId,
+          model: selectedModel,
         }),
       })
       const agentData = await agentRes.json()
@@ -328,9 +397,54 @@ export default function MainPanel({ researchId }: MainPanelProps) {
           <div className="flex items-center gap-2">
             <h2 className="text-sm font-bold text-white uppercase tracking-wider">Chat</h2>
           </div>
-          <div className="flex items-center gap-2.5 text-zinc-500">
-            <SlidersHorizontal className="w-4 h-4 hover:text-white cursor-pointer transition-colors" />
-            <MoreVertical className="w-4 h-4 hover:text-white cursor-pointer transition-colors" />
+          <div className="flex items-center gap-3">
+            {/* Custom Model Selector Dropdown */}
+            <div className="relative">
+              <button
+                onClick={() => setIsModelDropdownOpen(!isModelDropdownOpen)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-zinc-850 bg-[#161618] hover:bg-zinc-800 text-[10px] font-bold text-zinc-350 hover:text-white transition-all cursor-pointer select-none"
+              >
+                <span>{formatModelName(selectedModel)}</span>
+                <ChevronDown className="w-3.5 h-3.5 text-zinc-500" />
+              </button>
+
+              {isModelDropdownOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setIsModelDropdownOpen(false)} />
+                  <div className="absolute right-0 mt-2 w-64 bg-[#0c0c0e]/95 backdrop-blur-md border border-zinc-800 rounded-2xl py-2 shadow-2xl z-50 animate-in fade-in slide-in-from-top-2 duration-150">
+                    {Object.entries(modelsByProvider).map(([provider, models]) => (
+                      <div key={provider} className="mb-2">
+                        <div className="px-4 py-1 text-[9px] font-bold text-zinc-650 uppercase tracking-widest border-b border-zinc-900/10 mb-1">
+                          {provider}
+                        </div>
+                        <div className="flex flex-col">
+                          {models.map((model) => (
+                            <button
+                              key={model}
+                              onClick={() => {
+                                setSelectedModel(model);
+                                setIsModelDropdownOpen(false);
+                              }}
+                              className={`px-4 py-1.5 text-[11px] text-left font-semibold flex items-center justify-between hover:bg-zinc-850/50 transition-colors cursor-pointer ${
+                                selectedModel === model ? 'text-white bg-zinc-800/25' : 'text-zinc-450 hover:text-zinc-200'
+                              }`}
+                            >
+                              <span>{formatModelName(model)}</span>
+                              {selectedModel === model && <Check className="w-3.5 h-3.5 text-emerald-400" />}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2.5 text-zinc-500">
+              <SlidersHorizontal className="w-4 h-4 hover:text-white cursor-pointer transition-colors" />
+              <MoreVertical className="w-4 h-4 hover:text-white cursor-pointer transition-colors" />
+            </div>
           </div>
         </div>
 
@@ -516,12 +630,26 @@ export default function MainPanel({ researchId }: MainPanelProps) {
           {/* Composer Action Toolbar */}
           <div className="absolute left-3.5 right-3.5 bottom-3.5 flex items-center justify-between">
             <div className="flex items-center gap-1.5">
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileChange}
+                accept=".pdf"
+                className="hidden"
+              />
               <button
-                className="p-2 hover:bg-zinc-800/80 text-zinc-500 hover:text-white rounded-lg transition-colors cursor-pointer"
-                title="Attach sources"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isUploading}
+                className="p-2 hover:bg-zinc-800/80 text-zinc-500 hover:text-white rounded-lg transition-colors cursor-pointer disabled:opacity-45"
+                title={isUploading ? "Processing PDF..." : "Attach PDF source"}
               >
-                <Paperclip className="w-4 h-4" />
+                {isUploading ? (
+                  <Loader2 className="w-4 h-4 animate-spin text-emerald-500" />
+                ) : (
+                  <Paperclip className="w-4 h-4" />
+                )}
               </button>
+
               <button
                 className="p-2 hover:bg-zinc-800/80 text-zinc-500 hover:text-white rounded-lg transition-colors cursor-pointer"
                 title="Deep Research"

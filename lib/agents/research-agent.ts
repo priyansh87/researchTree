@@ -12,14 +12,15 @@ async function callGroq(
   jsonMode = false,
   retries = 3,
   delayMs = 2000,
-  modelIndex = 0
+  modelIndex = 0,
+  overrideModel?: string | null
 ): Promise<string> {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) {
     throw new Error('GROQ_API_KEY environment variable is not defined.');
   }
 
-  const configuredModel = process.env.CHAT_MODEL || process.env.NEXT_PUBLIC_CHAT_MODEL;
+  const configuredModel = overrideModel || process.env.CHAT_MODEL || process.env.NEXT_PUBLIC_CHAT_MODEL;
 
   // Define models list to cycle through in case of rate limits (429)
   const models = configuredModel 
@@ -46,7 +47,7 @@ async function callGroq(
     if (response.status === 429 && retries > 0) {
       console.warn(`LLM rate limit (429) encountered. Retrying in ${delayMs}ms with model failover...`);
       await new Promise((resolve) => setTimeout(resolve, delayMs));
-      return callGroq(messages, jsonMode, retries - 1, delayMs * 2, (modelIndex + 1) % models.length);
+      return callGroq(messages, jsonMode, retries - 1, delayMs * 2, (modelIndex + 1) % models.length, overrideModel);
     }
 
     if (!response.ok) {
@@ -61,7 +62,7 @@ async function callGroq(
     if (retries > 0) {
       console.warn(`LLM connection error. Retrying in ${delayMs}ms...`, err);
       await new Promise((resolve) => setTimeout(resolve, delayMs));
-      return callGroq(messages, jsonMode, retries - 1, delayMs * 2, (modelIndex + 1) % models.length);
+      return callGroq(messages, jsonMode, retries - 1, delayMs * 2, (modelIndex + 1) % models.length, overrideModel);
     }
     throw err;
   }
@@ -147,7 +148,6 @@ function parseMetadataFromResponse(content: string) {
   return { metadata, cleanedMarkdown };
 }
 
-// Define the LangGraph State Annotation Schema
 const AgentStateAnnotation = Annotation.Root({
   prompt: Annotation<string>,
   choices: Annotation<Record<string, string>>,
@@ -160,6 +160,8 @@ const AgentStateAnnotation = Annotation.Root({
   searchQuery: Annotation<string | null>,
   searchResults: Annotation<any[]>,
   memories: Annotation<any[]>,
+  researchId: Annotation<string | null>,
+  model: Annotation<string | null>,
   report: Annotation<{
     markdown: string;
     sources: Array<{ domain: string; title: string; trust: number; url: string }>;
@@ -173,6 +175,7 @@ const AgentStateAnnotation = Annotation.Root({
     } | null;
   } | null>,
 });
+
 
 // LANGGRAPH NODES
 
@@ -197,7 +200,7 @@ You MUST respond with a JSON object:
       const responseText = await callGroq([
         { role: 'system', content: systemPrompt },
         { role: 'user', content: `Selections:\n${JSON.stringify(state.choices)}` }
-      ], true);
+      ], true, 3, 2000, 0, state.model);
       const parsed = cleanAndParseJSON(responseText);
       return {
         intent: 'research',
@@ -270,7 +273,7 @@ You MUST respond with a JSON object matching this schema:
   ];
 
   try {
-    const responseText = await callGroq(messages, true);
+    const responseText = await callGroq(messages, true, 3, 2000, 0, state.model);
     const parsed = cleanAndParseJSON(responseText);
     return {
       intent: parsed.intent || 'research',
@@ -321,7 +324,7 @@ You MUST respond with a JSON object matching this schema:
   ]
 }`;
     try {
-      const responseText = await callGroq([{ role: 'system', content: systemPrompt }], true);
+      const responseText = await callGroq([{ role: 'system', content: systemPrompt }], true, 3, 2000, 0, state.model);
       const parsed = cleanAndParseJSON(responseText);
       results = parsed.results || [];
     } catch (e) {
@@ -346,6 +349,17 @@ async function synthesizerNode(state: typeof AgentStateAnnotation.State): Promis
     ? state.memories.map((m: any, i) => `[Memory ${i+1}]: ${m.content || m.memory || String(m)}`).join('\n')
     : 'No prior memories found for this scope.';
 
+  // Load RAG context dynamically from pdf_chunks if researchId exists
+  let ragContext = '';
+  if (state.researchId) {
+    try {
+      const { getRelevantContext } = await import('@/lib/utils/rag');
+      ragContext = await getRelevantContext(state.researchId, state.prompt);
+    } catch (e) {
+      console.error('Error fetching RAG context in synthesizerNode:', e);
+    }
+  }
+
   const systemPrompt = `You are a premium, expert AI Deep Research synthesis agent.
 Write a detailed, friendly, and natural chat response answering the user's query in detail (similar to responses from ChatGPT, Gemini, or Claude). Talk directly to the user. Use bolding, tables, bullet points, and headers naturally in markdown.
 Incorporate the user's choices:
@@ -356,6 +370,9 @@ ${memoriesStr}
 
 Incorporate the web search findings:
 ${searchResultsStr}
+
+${ragContext ? `Incorporate the following parsed PDF source contents which are highly relevant to the query:
+${ragContext}` : ''}
 
 To display comparison charts inside your response markdown, you can output a fenced code block with language "json-chart" containing the chart configuration. Make sure it is valid JSON.
 Example:
@@ -410,7 +427,7 @@ Example format:
 
   try {
     // Generate text response (non JSON-mode!)
-    const responseText = await callGroq(messages, false);
+    const responseText = await callGroq(messages, false, 3, 2000, 0, state.model);
     
     // Parse the output to separate markdown text and metadata block
     const { metadata, cleanedMarkdown } = parseMetadataFromResponse(responseText);
@@ -468,13 +485,17 @@ export async function runResearchAgentWorkflow(
   prompt: string,
   choices: Record<string, string> = {},
   history: any[] = [],
-  memories: any[] = []
+  memories: any[] = [],
+  researchId?: string,
+  model?: string
 ): Promise<typeof AgentStateAnnotation.State> {
   const initialState = {
     prompt,
     choices,
     history,
     memories,
+    researchId: researchId || null,
+    model: model || null,
     topic: 'general',
     intent: 'research' as const,
     clarificationNeeded: false,
@@ -489,8 +510,14 @@ export async function runResearchAgentWorkflow(
 }
 
 // Backwards compatibility functions to avoid breaking imports
-export async function analyzeQuery(prompt: string, history: any[] = [], memories: any[] = []) {
-  const result = await runResearchAgentWorkflow(prompt, {}, history, memories);
+export async function analyzeQuery(
+  prompt: string,
+  history: any[] = [],
+  memories: any[] = [],
+  researchId?: string,
+  model?: string
+) {
+  const result = await runResearchAgentWorkflow(prompt, {}, history, memories, researchId, model);
   return {
     intent: result.intent,
     conversationalReply: result.conversationalReply,
@@ -504,9 +531,11 @@ export async function generateResearchReport(
   prompt: string,
   choices: Record<string, string> = {},
   history: any[] = [],
-  memories: any[] = []
+  memories: any[] = [],
+  researchId?: string,
+  model?: string
 ) {
-  const result = await runResearchAgentWorkflow(prompt, choices, history, memories);
+  const result = await runResearchAgentWorkflow(prompt, choices, history, memories, researchId, model);
   return result.report || {
     markdown: `### Fallback Report on: ${prompt}`,
     sources: [],
@@ -514,6 +543,7 @@ export async function generateResearchReport(
     facts: [],
   };
 }
+
 
 // 3. Add facts / conversation turns to Mem0 memory
 export async function addMem0Memory(

@@ -180,7 +180,7 @@ export async function POST(request: Request, { params }: RouteParams) {
       return NextResponse.json({ error: 'Unauthorized research access' }, { status: 403 });
     }
 
-    const { type, content, choices, chatTabId } = await request.json();
+    const { type, content, choices, chatTabId, model } = await request.json();
 
     if (!type || !content) {
       return NextResponse.json({ error: 'Type and content are required' }, { status: 400 });
@@ -276,10 +276,10 @@ export async function POST(request: Request, { params }: RouteParams) {
         .find((h) => h.type === 'user' && !h.content.includes('Choices submitted'))?.content || content;
 
       // Extract topic from last query for memory categorization
-      const queryAnalysis = await analyzeQuery(lastUserMessage, history.slice(0, -1), memories);
+      const queryAnalysis = await analyzeQuery(lastUserMessage, history.slice(0, -1), memories, researchId, model);
       const topic = queryAnalysis.topic || 'general';
 
-      const reportData = await generateResearchReport(lastUserMessage, choices, history.slice(0, -1), memories);
+      const reportData = await generateResearchReport(lastUserMessage, choices, history.slice(0, -1), memories, researchId, model);
       const { charts, cleanedContent } = parseChartsFromMarkdown(reportData.markdown || '');
 
       if (reportData.topicMetadata) {
@@ -349,7 +349,7 @@ export async function POST(request: Request, { params }: RouteParams) {
 
     } else {
       // CASE B: Standard user query, run Planner Agent check
-      const queryAnalysis = await analyzeQuery(content, history.slice(0, -1), memories);
+      const queryAnalysis = await analyzeQuery(content, history.slice(0, -1), memories, researchId, model);
       const topic = queryAnalysis.topic || 'general';
 
       if (queryAnalysis.intent === 'conversational') {
@@ -398,7 +398,7 @@ export async function POST(request: Request, { params }: RouteParams) {
 
       } else {
         // Enough details present, generate research directly
-        const reportData = await generateResearchReport(content, {}, history.slice(0, -1), memories);
+        const reportData = await generateResearchReport(content, {}, history.slice(0, -1), memories, researchId, model);
         const { charts, cleanedContent } = parseChartsFromMarkdown(reportData.markdown || '');
 
         if (reportData.topicMetadata) {
